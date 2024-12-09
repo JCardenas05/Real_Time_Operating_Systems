@@ -1,4 +1,4 @@
-#include "rgb_led.h"
+#include "pwm_control.h"
 
 void pwm_channel_init(const PWM_Config *config, const PWM_Channel *channel) {
     // Configure LEDC timer
@@ -39,4 +39,11 @@ void rgb_led_set_duty(const RGB_LED *rgb_led, uint32_t red_duty, uint32_t green_
     pwm_set_duty(&rgb_led->red, red_duty, rgb_led->config.mode);
     pwm_set_duty(&rgb_led->green, green_duty, rgb_led->config.mode);
     pwm_set_duty(&rgb_led->blue, blue_duty, rgb_led->config.mode);
+}
+
+void rgb_led_set_color(const RGB_LED *rgb_led, uint32_t red_value, uint32_t green_value, uint32_t blue_value) {
+    uint32_t red_duty  = (red_value * (1 << rgb_led->config.duty_res) - 1 ) / 100;
+    uint32_t green_duty = (green_value * (1 << rgb_led->config.duty_res) - 1 ) / 100;
+    uint32_t blue_duty = (blue_value * (1 << rgb_led->config.duty_res) - 1 ) / 100;
+    rgb_led_set_duty(rgb_led, red_duty, green_duty, blue_duty);
 }
