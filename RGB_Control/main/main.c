@@ -37,7 +37,8 @@ void app_main(void) {
             vTaskDelay(10 / portTICK_PERIOD_MS);
         }
 
-        rgb_led_set_color(&rgb_led, 0, 0, 0);
+        rgb_led_set_color(&rgb_led, 0, 0, 0); 
+        vTaskDelay(100 / portTICK_PERIOD_MS);
 
     }
 }
