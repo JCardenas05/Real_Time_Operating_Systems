@@ -6,3 +6,4 @@
 ## Archivos
 - `led_button_input`: Controla el blink de un LED utilizando un botón de entrada con tareas.
 - `PWM_Control`: Biblioteca para controlar salidas PWM, permitiendo el control de LED RGB con funcionalidades para mapear valores entre 0 y 100, y establecer colores usando una estructura (R,G,B).
+' `RGB_Control`: Proyecto de ejemplo de aplicación de la biblioteca PWM_Control para controlar un LED RGB.
