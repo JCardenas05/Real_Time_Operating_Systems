@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/CMakeFiles/bootloader
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/CMakeFiles/bootloader.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/CMakeFiles/bootloader-complete.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
