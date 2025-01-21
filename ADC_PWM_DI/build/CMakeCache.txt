@@ -590,9 +590,9 @@ CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
 //Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS
 C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS:INTERNAL=1
 //Details about finding Git
-FIND_PACKAGE_MESSAGE_DETAILS_Git:INTERNAL=[/usr/bin/git][v2.47.1()]
+FIND_PACKAGE_MESSAGE_DETAILS_Git:INTERNAL=[/usr/bin/git][v2.48.1()]
 //Details about finding Python3
-FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/bin/python][cfound components: Interpreter ][v3.13.0()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/bin/python][cfound components: Interpreter ][v3.13.1()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //ADVANCED property for variable: GIT_EXECUTABLE
@@ -605,7 +605,7 @@ _Python3_Compiler_REASON_FAILURE:INTERNAL=
 _Python3_Development_REASON_FAILURE:INTERNAL=
 _Python3_EXECUTABLE:INTERNAL=/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/bin/python
 //Python3 Properties
-_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;13;0;32;64;;;abi3;/usr/lib64/python3.13;/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/lib64/python3.13;/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/lib/python3.13/site-packages;/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/lib64/python3.13/site-packages
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;13;1;32;64;;;abi3;/usr/lib64/python3.13;/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/lib64/python3.13;/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/lib/python3.13/site-packages;/home/jcardenas05/.espressif/python_env/idf5.3_py3.13_env/lib64/python3.13/site-packages
 _Python3_INTERPRETER_SIGNATURE:INTERNAL=e050303a6bb6f393620bb465f2bb5efb
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=

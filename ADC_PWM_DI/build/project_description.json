@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "ADC_PWM_DI",
-    "project_version":    "7a2af56-dirty",
+    "project_version":    "f74edd1-dirty",
     "project_path":       "/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI",
     "idf_path":           "/home/jcardenas05/esp/v5.3.1/esp-idf",
     "build_dir":          "/run/media/jcardenas05/2AB20958B2092A41/Real_Time_Operating_Systems/ADC_PWM_DI/build",
