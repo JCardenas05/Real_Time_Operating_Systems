@@ -10,33 +10,49 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "math.h"
 #include "NTC_lib/include/ntc_lib.h"
-
-const static char *TAG = "EXAMPLE";
+#include "ADC_lib/include/adc_lib.h"
 
 #define EXAMPLE_ADC1_CHAN0          ADC_CHANNEL_4
 #define EXAMPLE_ADC_ATTEN           ADC_ATTEN_DB_12
 
-static int adc_raw;
-static int voltage;
-static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle);
-static void example_adc_calibration_deinit(adc_cali_handle_t handle);
 
 void app_main(void)
 {
-    adc_oneshot_unit_handle_t adc1_handle;
-    adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
-
-    adc_oneshot_chan_cfg_t config = {
+    ADC_Config adc_config = {
+        .unit = ADC_UNIT_1,
+        .channel = ADC_CHANNEL_4,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = EXAMPLE_ADC_ATTEN,
+        .atten = ADC_ATTEN_DB_12
     };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, EXAMPLE_ADC1_CHAN0, &config));
 
-    adc_cali_handle_t adc1_cali_chan0_handle = NULL;
-    bool do_calibration1_chan0 = example_adc_calibration_init(ADC_UNIT_1, EXAMPLE_ADC1_CHAN0, EXAMPLE_ADC_ATTEN, &adc1_cali_chan0_handle);
+    float T;
+    float R;
+
+    NTC_Config ntc_config = {
+        .b = 3200,
+        .R0 = 47,
+        .T0 = 298.15,
+        .R1 = 100
+    };
+
+    adc_initialize(&adc_config);
+
+    while (1) {
+        int raw = read_adc_raw(&adc_config);
+        float voltage = adc_raw_to_voltage(&adc_config, raw);
+
+        printf("Raw: %d, Voltage: %.2f V\n", raw, voltage);
+        R = R_NTC(&ntc_config, voltage);
+        T = T_NTC(&ntc_config, R);
+
+        printf("R_NTC: %.2f, T_NTC: %.2f\n", R, T);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    /*
+
+    adc_calibration_deinit(&adc_config);
+
 
     float T;
     float V;
@@ -73,41 +89,5 @@ void app_main(void)
     if (do_calibration1_chan0) {
         example_adc_calibration_deinit(adc1_cali_chan0_handle);
     }
-}
-
-static bool example_adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
-{
-    adc_cali_handle_t handle = NULL;
-    esp_err_t ret = ESP_FAIL;
-    bool calibrated = false;
-
-    if (!calibrated) {
-        ESP_LOGI(TAG, "calibration scheme version is %s", "Line Fitting");
-        adc_cali_line_fitting_config_t cali_config = {
-            .unit_id = unit,
-            .atten = atten,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
-        };
-        ret = adc_cali_create_scheme_line_fitting(&cali_config, &handle);
-        if (ret == ESP_OK) {
-            calibrated = true;
-        }
-    }
-
-    *out_handle = handle;
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Calibration Success");
-    } else if (ret == ESP_ERR_NOT_SUPPORTED || !calibrated) {
-        ESP_LOGW(TAG, "eFuse not burnt, skip software calibration");
-    } else {
-        ESP_LOGE(TAG, "Invalid arg or no memory");
-    }
-
-    return calibrated;
-}
-
-static void example_adc_calibration_deinit(adc_cali_handle_t handle)
-{
-    ESP_LOGI(TAG, "deregister %s calibration scheme", "Line Fitting");
-    ESP_ERROR_CHECK(adc_cali_delete_scheme_line_fitting(handle));
+    */
 }

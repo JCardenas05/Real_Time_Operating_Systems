@@ -9,10 +9,11 @@ typedef struct ADC_Config {
     adc_channel_t channel;
     adc_bitwidth_t bitwidth;
     adc_atten_t atten;
-    adc_cali_handle_t calibration_handle; // Manejador de calibración específico para este ADC
-    
+    adc_cali_handle_t calibration_handle; // Manejador de calibración
+    adc_oneshot_unit_handle_t adc_handle; // Manejador del ADC
 } ADC_Config;
 
+bool adc_calibration_init(ADC_Config *config);
 adc_cali_handle_t adc_initialize(ADC_Config *config);
 int read_adc_raw(ADC_Config *config);
 float adc_raw_to_voltage(ADC_Config *config, int raw);
