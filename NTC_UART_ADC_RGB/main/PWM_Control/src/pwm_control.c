@@ -19,7 +19,8 @@ void pwm_channel_init(const PWM_Config *config, const PWM_Channel *channel) {
         .intr_type      = LEDC_INTR_DISABLE,
         .gpio_num       = channel->gpio_num,
         .duty           = 0,
-        .hpoint         = 0
+        .hpoint         = 0,
+        .flags.output_invert = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }
@@ -42,8 +43,8 @@ void rgb_led_set_duty(const RGB_LED *rgb_led, uint32_t red_duty, uint32_t green_
 }
 
 void rgb_led_set_color(const RGB_LED *rgb_led, uint32_t red_value, uint32_t green_value, uint32_t blue_value) {
-    uint32_t red_duty  = (red_value * (1 << rgb_led->config.duty_res) - 1 ) / 100;
-    uint32_t green_duty = (green_value * (1 << rgb_led->config.duty_res) - 1 ) / 100;
-    uint32_t blue_duty = (blue_value * (1 << rgb_led->config.duty_res) - 1 ) / 100;
+    uint32_t red_duty  = (red_value * ((1 << rgb_led->config.duty_res) - 1)) / 100;
+    uint32_t green_duty = (green_value * ((1 << rgb_led->config.duty_res) - 1)) / 100;
+    uint32_t blue_duty = (blue_value * ((1 << rgb_led->config.duty_res) - 1)) / 100;
     rgb_led_set_duty(rgb_led, red_duty, green_duty, blue_duty);
 }

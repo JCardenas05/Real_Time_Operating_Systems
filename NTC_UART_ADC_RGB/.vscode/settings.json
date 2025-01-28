@@ -5,5 +5,6 @@
         "board/esp32-wrover-kit-3.3v.cfg"
     ],
     "idf.port": "/dev/ttyUSB0",
-    "idf.toolsPath": "/home/jcardenas05/.espressif"
+    "idf.toolsPath": "/home/jcardenas05/.espressif",
+    "idf.flashType": "UART"
 }
