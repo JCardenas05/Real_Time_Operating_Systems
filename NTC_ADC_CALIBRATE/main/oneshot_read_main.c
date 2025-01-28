@@ -5,9 +5,9 @@
 #include "freertos/task.h"
 #include "soc/soc_caps.h"
 #include "esp_log.h"
-#include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
+//#include "esp_adc/adc_oneshot.h"
+//#include "esp_adc/adc_cali.h"
+//#include "esp_adc/adc_cali_scheme.h"
 #include "math.h"
 #include "NTC_lib/include/ntc_lib.h"
 #include "ADC_lib/include/adc_lib.h"
@@ -19,8 +19,15 @@
 void app_main(void)
 {
     ADC_Config adc_config = {
-        .unit = ADC_UNIT_1,
+        //.unit = ADC_UNIT_1,
         .channel = ADC_CHANNEL_4,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = ADC_ATTEN_DB_12
+    };
+
+    ADC_Config adc_config_2 = {
+        //.unit = ADC_UNIT_1,
+        .channel = ADC_CHANNEL_5,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12
     };
@@ -35,14 +42,19 @@ void app_main(void)
         .R1 = 100
     };
 
-    adc_initialize(&adc_config);
+    config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_1);
+    adc_initialize(&adc_config, adc_uint_conf);
+    adc_initialize(&adc_config_2, adc_uint_conf);
 
     while (1) {
         int raw = read_adc_raw(&adc_config);
+        int raw2 = read_adc_raw(&adc_config_2);
         float voltage = adc_raw_to_voltage(&adc_config, raw);
+        float voltage2 = adc_raw_to_voltage(&adc_config_2, raw2);
 
         printf("Raw: %d, Voltage: %.2f V\n", raw, voltage);
-        R = R_NTC(&ntc_config, voltage);
+        printf("Raw2: %d, Voltage2: %.2f V\n", raw2, voltage2);
+        R = R_NTC(&ntc_config, voltage2);
         T = T_NTC(&ntc_config, R);
 
         printf("R_NTC: %.2f, T_NTC: %.2f\n", R, T);

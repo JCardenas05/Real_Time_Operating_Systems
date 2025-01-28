@@ -13,14 +13,8 @@ typedef struct ADC_Config {
     adc_oneshot_unit_handle_t adc_handle; // Manejador del ADC
 } ADC_Config;
 
-typedef struct config_adc_unit {
-    adc_unit_t unit;
-    adc_oneshot_unit_handle_t adc_handle;
-} config_adc_unit;
-
-config_adc_unit adc_init_adc_unit(adc_unit_t unit);
 bool adc_calibration_init(ADC_Config *config);
-adc_cali_handle_t adc_initialize(ADC_Config *config, config_adc_unit unit_conf);
+adc_cali_handle_t adc_initialize(ADC_Config *config);
 int read_adc_raw(ADC_Config *config);
 float adc_raw_to_voltage(ADC_Config *config, int raw);
 void adc_calibration_deinit(ADC_Config *config);

@@ -22,22 +22,12 @@ bool adc_calibration_init(ADC_Config *config) {
     return false;
 }
 
-config_adc_unit adc_init_adc_unit(adc_unit_t unit) {
-    adc_oneshot_unit_handle_t adc_handle;
+adc_cali_handle_t adc_initialize(ADC_Config *config) {
     adc_oneshot_unit_init_cfg_t init_config = {
-        .unit_id = unit,
+        .unit_id = config->unit,
     };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc_handle));
-    config_adc_unit conf = {
-        .unit = unit,
-        .adc_handle = adc_handle
-    };
-    return conf;
-}
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &config->adc_handle));
 
-adc_cali_handle_t adc_initialize(ADC_Config *config, config_adc_unit unit_conf) {
-    config->adc_handle = unit_conf.adc_handle;
-    config->unit = unit_conf.unit;
     adc_oneshot_chan_cfg_t chan_config = {
         .bitwidth = config->bitwidth,
         .atten = config->atten,
