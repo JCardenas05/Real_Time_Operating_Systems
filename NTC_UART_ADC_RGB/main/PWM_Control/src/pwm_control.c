@@ -20,7 +20,7 @@ void pwm_channel_init(const PWM_Config *config, const PWM_Channel *channel) {
         .gpio_num       = channel->gpio_num,
         .duty           = 0,
         .hpoint         = 0,
-        .flags.output_invert = 0
+        .flags.output_invert = config->invert
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }

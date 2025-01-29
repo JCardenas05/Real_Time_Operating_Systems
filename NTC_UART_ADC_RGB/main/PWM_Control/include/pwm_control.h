@@ -16,6 +16,7 @@ typedef struct PWM_Config {
     ledc_timer_t timer;        /**< Número del temporizador. */
     ledc_timer_bit_t duty_res; /**< Resolución del ciclo de trabajo en bits. */
     uint32_t frequency;        /**< Frecuencia del PWM en Hz. */
+    int invert;                /**< Invertir la salida del PWM. */
 } PWM_Config;
 
 /**

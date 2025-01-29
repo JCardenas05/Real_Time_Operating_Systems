@@ -16,6 +16,10 @@ static const int RX_BUF_SIZE = 1024;
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
 
+#define GPIO_INPUT_IO_0     0
+#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0))
+#define ESP_INTR_FLAG_DEFAULT 0
+
 typedef struct {
     const char *command;
     void (*handler)();
@@ -33,6 +37,22 @@ static Thresholds_Color current_thresholds = {
     .threshold_B = {0, 0}
 };
 SemaphoreHandle_t thresholds_mutex;
+
+enum current_led
+{
+    RED,
+    GREEN,
+    BLUE
+};
+
+typedef struct RGB_Values
+{
+    int red;
+    int green;
+    int blue;
+} RGB_Values;
+
+int current_led = RED;
 
 int sendData(const char* data)
 {
@@ -131,8 +151,6 @@ void process_command(const char *input) {
             return;
         }
     }
-
-    // Si no se encontró el comando
     printf("Error: Command '%s' not found\n", command);
 }
 
@@ -188,6 +206,26 @@ static void rx_task(void *arg)
 }
 //endregion
 
+static void setup_rgb_dimmer(RGB_LED *rgb_led_dimmer) {
+    rgb_led_dimmer->red.gpio_num = 12;
+    rgb_led_dimmer->red.channel = LEDC_CHANNEL_3;
+
+    rgb_led_dimmer->green.gpio_num = 27;
+    rgb_led_dimmer->green.channel = LEDC_CHANNEL_4;
+
+    rgb_led_dimmer->blue.gpio_num = 26;
+    rgb_led_dimmer->blue.channel = LEDC_CHANNEL_5;
+
+    rgb_led_dimmer->config.mode = LEDC_LOW_SPEED_MODE;
+    rgb_led_dimmer->config.timer = LEDC_TIMER_1;
+    rgb_led_dimmer->config.duty_res = LEDC_TIMER_13_BIT;
+    rgb_led_dimmer->config.frequency = 4000;
+    rgb_led_dimmer->config.invert = 1;
+
+    rgb_led_init(rgb_led_dimmer);
+    printf("RGB LED Dimmer configured\n");
+}
+
 static void setup_rgb_temp(RGB_LED *rgb_led_temp) {
     // Usar el operador de acceso indirecto para llenar los campos
     rgb_led_temp->red.gpio_num = 21;
@@ -203,10 +241,50 @@ static void setup_rgb_temp(RGB_LED *rgb_led_temp) {
     rgb_led_temp->config.timer = LEDC_TIMER_0;
     rgb_led_temp->config.duty_res = LEDC_TIMER_13_BIT;
     rgb_led_temp->config.frequency = 4000;
+    rgb_led_temp->config.invert = 0;
 
     // Llamar a la función de inicialización
     rgb_led_init(rgb_led_temp);
     printf("RGB LED Temp configured\n");
+}
+
+void dimmer_RGB_task(void *arg) {
+    RGB_LED rgb_led_dimmer;
+    setup_rgb_dimmer(&rgb_led_dimmer);
+
+    rgb_led_set_color(&rgb_led_dimmer, 0, 0, 0);
+
+    config_adc_unit adc_uint_conf_dimmer = adc_init_adc_unit(ADC_UNIT_1);
+
+    ADC_Config adc_config_dimmer;
+    adc_config_dimmer.channel = ADC_CHANNEL_5;
+    adc_config_dimmer.bitwidth = ADC_BITWIDTH_DEFAULT;
+    adc_config_dimmer.atten = ADC_ATTEN_DB_12;
+
+    adc_initialize(&adc_config_dimmer, adc_uint_conf_dimmer);
+    static RGB_Values current_values_rgb = {0, 0, 0};   
+
+
+    int raw_dimmer;
+    
+    while(1){
+        raw_dimmer = read_adc_raw(&adc_config_dimmer);
+        fprintf(stderr, "Raw: %d\n", raw_dimmer);
+        if (current_led == RED)
+        {
+            current_values_rgb.red = raw_dimmer;
+        }
+        else if (current_led == GREEN)
+        {
+            current_values_rgb.green = raw_dimmer;
+        }
+        else
+        {
+            current_values_rgb.blue = raw_dimmer;
+        }
+        rgb_led_set_duty(&rgb_led_dimmer, current_values_rgb.red, current_values_rgb.green, current_values_rgb.blue);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config, config_adc_unit adc_uint_conf){
@@ -219,6 +297,30 @@ void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config, config_adc_uni
     ntc_config->T0 = 298.15;
     ntc_config->R1 = 100;
     adc_initialize(adc_config, adc_uint_conf);
+}
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    // Cambiar el color actual (ciclo entre 0, 1 y 2)
+    current_led = (current_led + 1) % 3;
+}
+
+static void config_button(){
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = 1;
+    gpio_config(&io_conf);
+
+    //change gpio interrupt type for one pin
+    gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_POSEDGE);
+
+    //install gpio isr service
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+
+    //hook isr handler for specific gpio pin
+    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
 }
 
 static void ntc_temp_rgb_task(void *arg) {
@@ -285,6 +387,7 @@ static void ntc_temp_rgb_task(void *arg) {
 
 void app_main(void)
 {   
+    config_button();
     thresholds_mutex = xSemaphoreCreateMutex();
     if (thresholds_mutex == NULL) {
         ESP_LOGE("APP_MAIN", "No se pudo crear el mutex");
@@ -293,6 +396,8 @@ void app_main(void)
 
     init();
     xTaskCreate(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
+
     //xTaskCreate(tx_task, "uart_tx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 2, NULL);
     xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
+    xTaskCreate(dimmer_RGB_task, "dimmer_rbg_task", 4096, NULL, configMAX_PRIORITIES - 4, NULL);
 }
