@@ -12,16 +12,74 @@
 
 static const int RX_BUF_SIZE = 1024;
 
-#define TXD_PIN (GPIO_NUM_4)
-#define RXD_PIN (GPIO_NUM_5)
+#define TXD_PIN (GPIO_NUM_1)
+#define RXD_PIN (GPIO_NUM_3)
 
 typedef struct {
     const char *command;
     void (*handler)();
 } Command;
 
-void setup_range_R(){
-    fprintf(stderr, "Setting up RGB LED range\n");
+typedef struct {
+    float threshold_R[2];
+    float threshold_G[2];
+    float threshold_B[2];
+} Thresholds_Color;
+
+QueueHandle_t threshold_queue_rgb;
+
+int sendData(const char* data)
+{
+    static const char *TAG = "SEND_DATA";
+    const int len = strlen(data);
+    const int txBytes = uart_write_bytes(UART_NUM_0, data, len);
+    ESP_LOGI(TAG, "Wrote %d bytes", txBytes);
+    return txBytes;
+}
+
+void setup_range_RGB(char *arg) {
+    // Extraer los argumentos
+    char *color = strtok(arg, "$");
+    char *down = strtok(NULL, "$");
+    char *up = strtok(NULL, "$");
+
+    // Validar que los argumentos no sean NULL
+    if (color == NULL || down == NULL || up == NULL) {
+        sendData("Error: Argumentos insuficientes\n");
+        return;
+    }
+
+    // Obtener los umbrales actuales de la cola o usar valores por defecto
+    Thresholds_Color thresholds;
+    xQueueReceive(threshold_queue_rgb, &thresholds, 0);
+
+    // Convertir los valores de down y up a float
+    float new_down = atof(down);
+    float new_up = atof(up);
+
+    // Actualizar los umbrales según el color
+    if (strcmp(color, "R") == 0) {
+        thresholds.threshold_R[0] = new_down;
+        thresholds.threshold_R[1] = new_up;
+    } else if (strcmp(color, "G") == 0) {
+        thresholds.threshold_G[0] = new_down;
+        thresholds.threshold_G[1] = new_up;
+    } else if (strcmp(color, "B") == 0) {
+        thresholds.threshold_B[0] = new_down;
+        thresholds.threshold_B[1] = new_up;
+    } else {
+        sendData("Error: Color no válido\n");
+        return;
+    }
+    sendData("Updating RGB LED range\n");
+    if (xQueueSend(threshold_queue_rgb, &thresholds, portMAX_DELAY) == pdPASS) {
+        printf("Nuevos rangos enviados a la cola: R=[%.2f, %.2f], G=[%.2f, %.2f], B=[%.2f, %.2f]\n",
+               thresholds.threshold_R[0], thresholds.threshold_R[1],
+               thresholds.threshold_G[0], thresholds.threshold_G[1],
+               thresholds.threshold_B[0], thresholds.threshold_B[1]);
+    } else {
+        sendData("Error: No se pudo enviar los datos a la cola\n");
+    }
 }
 
 void get_temp(){
@@ -29,10 +87,43 @@ void get_temp(){
 }
 
 Command command_table[] = {
-    { "#RED_MAX", setup_range_R },\
+    { "#SET_RANGE", setup_range_RGB },\
     { "#GET_TEMP", get_temp},\
     {NULL, NULL} 
 };
+
+void process_command(const char *input) {
+    char input_copy[256]; // Copia de la entrada
+    strncpy(input_copy, input, sizeof(input_copy));
+    input_copy[sizeof(input_copy) - 1] = '\0'; // Aseguramos el fin de la cadena
+
+    //#SET_RANGE$B$0$100
+    char *command;
+    char *arg;
+    command = strtok(input_copy, "$");
+    arg = strtok(NULL, "");
+
+    // Validamos que el comando no sea NULL
+    if (command == NULL) {
+        printf("Error: No se encontró un comando\n");
+        return;
+    }
+
+    for (int i = 0; command_table[i].command != NULL; i++) {
+        if (strcmp(command, command_table[i].command) == 0) {
+            command_table[i].handler(arg);
+            if (arg != NULL) {
+                printf("Command '%s' processed with argument '%s'\n", command, arg);
+            } else {
+                printf("Command '%s' processed with no arguments\n", command);
+            }
+            return;
+        }
+    }
+
+    // Si no se encontró el comando
+    printf("Error: Command '%s' not found\n", command);
+}
 
 void init(void)
 {
@@ -49,39 +140,42 @@ void init(void)
     uart_set_pin(UART_NUM_0, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 }
 
-int sendData(const char* logName, const char* data)
-{
-    const int len = strlen(data);
-    const int txBytes = uart_write_bytes(UART_NUM_0, data, len);
-    ESP_LOGI(logName, "Wrote %d bytes", txBytes);
-    return txBytes;
-}
-
 static void tx_task(void *arg)
 {
     static const char *TX_TASK_TAG = "TX_TASK";
     esp_log_level_set(TX_TASK_TAG, ESP_LOG_INFO);
     while (1) {
-        sendData(TX_TASK_TAG, "Hello world");
+        sendData("Hello world from ESP32!");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 }
 
+//region UART_RX_TASK
 static void rx_task(void *arg)
 {
     static const char *RX_TASK_TAG = "RX_TASK";
     esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
     uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
+
+    if (data == NULL) {
+        ESP_LOGE(RX_TASK_TAG, "Error al asignar memoria para el buffer UART");
+        vTaskDelete(NULL); // Finaliza la tarea si no hay memoria
+    }
+
     while (1) {
         const int rxBytes = uart_read_bytes(UART_NUM_0, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
         if (rxBytes > 0) {
             data[rxBytes] = 0;
             ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
             ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+            sendData("Data received\n");
+            sendData((char*) data);
+            process_command((char*) data);
         }
     }
     free(data);
 }
+//endregion
 
 static void setup_rgb_temp(RGB_LED *rgb_led_temp) {
     // Usar el operador de acceso indirecto para llenar los campos
@@ -104,7 +198,7 @@ static void setup_rgb_temp(RGB_LED *rgb_led_temp) {
     printf("RGB LED Temp configured\n");
 }
 
-void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config){
+void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config, config_adc_unit adc_uint_conf){
     adc_config->channel = ADC_CHANNEL_0;
     adc_config->bitwidth = ADC_BITWIDTH_DEFAULT;
     adc_config->atten = ADC_ATTEN_DB_12;
@@ -113,34 +207,27 @@ void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config){
     ntc_config->R0 = 47;
     ntc_config->T0 = 298.15;
     ntc_config->R1 = 100;
-
-    config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_2);
     adc_initialize(adc_config, adc_uint_conf);
 }
-
-typedef struct {
-    float threshold_low;
-    float threshold_high;
-} Thresholds_Color;
-
-QueueHandle_t threshold_queue_red;
-QueueHandle_t threshold_queue_green;
-QueueHandle_t threshold_queue_blue;
 
 static void ntc_temp_rgb_task(void *arg){
     NTC_Config ntc_config;
     ADC_Config adc_config;
-    NTC_ADC_init(&adc_config, &ntc_config);
+
+    config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_2);
+
+    NTC_ADC_init(&adc_config, &ntc_config, adc_uint_conf);
 
     RGB_LED rgb_led_temp;
     setup_rgb_temp(&rgb_led_temp);
     rgb_led_set_duty(&rgb_led_temp, 0, 0, 0);
 
-    Thresholds_Color threshold_blue = {0, 35}; 
-    Thresholds_Color threshold_green = {25.0, 35.0};
-    Thresholds_Color threshold_red = {30, 45};
-
-    Thresholds_Color received_thresholds;
+     Thresholds_Color received_thresholds = {
+        .threshold_R = {0, 0},
+        .threshold_G = {0, 0},
+        .threshold_B = {0, 0}
+    };
+    xQueueSend(threshold_queue_rgb, &received_thresholds, 0);
 
     int current_r = 0;
     int current_g = 0;
@@ -151,26 +238,14 @@ static void ntc_temp_rgb_task(void *arg){
     float R;
     float T;
     while (1){
-
-        /*
-        if (xQueueReceive(threshold_queue_red, &received_thresholds, 0) == pdTRUE) {
-            threshold_red = received_thresholds;
-            printf("Thresholds updated in temperature task: low = %.2f, high = %.2f\n",
-                   threshold_red.threshold_low, threshold_red.threshold_high);
+        
+        if (xQueueReceive(threshold_queue_rgb, &received_thresholds, 0) == pdPASS) {
+            printf("Nuevos umbrales recibidos: R=[%.2f, %.2f], G=[%.2f, %.2f], B=[%.2f, %.2f]\n",
+                   received_thresholds.threshold_R[0], received_thresholds.threshold_R[1],
+                   received_thresholds.threshold_G[0], received_thresholds.threshold_G[1],
+                   received_thresholds.threshold_B[0], received_thresholds.threshold_B[1]);
+            sendData("New thresholds received");
         }
-
-        if (xQueueReceive(threshold_queue_green, &received_thresholds, 0) == pdTRUE) {
-            threshold_green = received_thresholds;
-            printf("Thresholds updated in temperature task: low = %.2f, high = %.2f\n",
-                   threshold_green.threshold_low, threshold_green.threshold_high);
-        }
-
-        if (xQueueReceive(threshold_queue_blue, &received_thresholds, 0) == pdTRUE) {
-            threshold_blue = received_thresholds;
-            printf("Thresholds updated in temperature task: low = %.2f, high = %.2f\n",
-                   threshold_blue.threshold_low, threshold_blue.threshold_high);
-        }
-        */
 
         raw = read_adc_raw(&adc_config);
         voltage = adc_raw_to_voltage(&adc_config, raw);
@@ -178,19 +253,24 @@ static void ntc_temp_rgb_task(void *arg){
         R = R_NTC(&ntc_config, voltage);
         T = T_NTC(&ntc_config, R);
 
-        if (T > threshold_red.threshold_low && T < threshold_red.threshold_high){
+        char buffer[50];
+        sprintf(buffer, "Temp: %.2f\n", T);
+        sendData(buffer);
+        sendData("\n");
+
+        if (T >= received_thresholds.threshold_R[0] && T <= received_thresholds.threshold_R[1]) {
             current_r = 100;
         } else {
             current_r = 0;
         }
 
-        if (T > threshold_green.threshold_low && T < threshold_green.threshold_high){
+        if (T >= received_thresholds.threshold_G[0] && T <= received_thresholds.threshold_G[1]) {
             current_g = 100;
         } else {
             current_g = 0;
         }
 
-        if (T > threshold_blue.threshold_low && T < threshold_blue.threshold_high){
+        if (T >= received_thresholds.threshold_B[0] && T <= received_thresholds.threshold_B[1]) {
             current_b = 100;
         } else {
             current_b = 0;
@@ -200,53 +280,15 @@ static void ntc_temp_rgb_task(void *arg){
 
         printf("R_NTC: %.2f, T_NTC: %.2f\n", R, T);
         vTaskDelay(pdMS_TO_TICKS(1000));
-    
     }
 }
-
-void process_command(const char *input) {
-    char input_copy[256]; // Copia de la entrada
-    strncpy(input_copy, input, sizeof(input_copy));
-    input_copy[sizeof(input_copy) - 1] = '\0'; // Aseguramos el fin de la cadena
-
-    char *command;
-    char *arg;
-    command = strtok(input_copy, "$");
-    arg = strtok(NULL, "$");
-
-    // Validamos que el comando no sea NULL
-    if (command == NULL) {
-        printf("Error: No se encontró un comando\n");
-        return;
-    }
-
-    // Iteramos por la tabla de comandos para buscar una coincidencia
-    for (int i = 0; command_table[i].command != NULL; i++) {
-        if (strcmp(command, command_table[i].command) == 0) {
-            command_table[i].handler(arg);
-
-            // Si existe un argumento, lo mostramos
-            if (arg != NULL) {
-                printf("Command '%s' processed with argument '%s'\n", command, arg);
-            } else {
-                printf("Command '%s' processed with no arguments\n", command);
-            }
-            return;
-        }
-    }
-
-    // Si no se encontró el comando
-    printf("Error: Command '%s' not found\n", command);
-}
-
-
 
 void app_main(void)
 {   
+    threshold_queue_rgb = xQueueCreate(5, sizeof(Thresholds_Color));
 
     init();
-    process_command("#RED_MAX$40$");
     xTaskCreate(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
-    xTaskCreate(tx_task, "uart_tx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 2, NULL);
+    //xTaskCreate(tx_task, "uart_tx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 2, NULL);
     xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
 }
