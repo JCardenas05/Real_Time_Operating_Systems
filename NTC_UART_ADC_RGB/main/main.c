@@ -9,6 +9,7 @@
 #include "ADC_lib/include/adc_lib.h"
 #include "NTC_lib/include/ntc_lib.h"
 #include "string.h"
+#include "freertos/semphr.h"
 
 static const int RX_BUF_SIZE = 1024;
 
@@ -26,7 +27,12 @@ typedef struct {
     float threshold_B[2];
 } Thresholds_Color;
 
-QueueHandle_t threshold_queue_rgb;
+static Thresholds_Color current_thresholds = {
+    .threshold_R = {0, 0},
+    .threshold_G = {0, 0},
+    .threshold_B = {0, 0}
+};
+SemaphoreHandle_t thresholds_mutex;
 
 int sendData(const char* data)
 {
@@ -49,9 +55,15 @@ void setup_range_RGB(char *arg) {
         return;
     }
 
-    // Obtener los umbrales actuales de la cola o usar valores por defecto
+    // Obtener los umbrales actuales de la cola
     Thresholds_Color thresholds;
-    xQueueReceive(threshold_queue_rgb, &thresholds, 0);
+    if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
+        thresholds = current_thresholds;
+        xSemaphoreGive(thresholds_mutex);
+    } else {
+        sendData("Error: No se pudo acceder al mutex\n");
+        return;
+    }
 
     // Convertir los valores de down y up a float
     float new_down = atof(down);
@@ -71,14 +83,13 @@ void setup_range_RGB(char *arg) {
         sendData("Error: Color no válido\n");
         return;
     }
-    sendData("Updating RGB LED range\n");
-    if (xQueueSend(threshold_queue_rgb, &thresholds, portMAX_DELAY) == pdPASS) {
-        printf("Nuevos rangos enviados a la cola: R=[%.2f, %.2f], G=[%.2f, %.2f], B=[%.2f, %.2f]\n",
-               thresholds.threshold_R[0], thresholds.threshold_R[1],
-               thresholds.threshold_G[0], thresholds.threshold_G[1],
-               thresholds.threshold_B[0], thresholds.threshold_B[1]);
+
+    if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
+        current_thresholds = thresholds;
+        xSemaphoreGive(thresholds_mutex);
+        sendData("Updating RGB LED range\n");
     } else {
-        sendData("Error: No se pudo enviar los datos a la cola\n");
+        sendData("Error: No se pudo actualizar los umbrales\n");
     }
 }
 
@@ -210,7 +221,7 @@ void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config, config_adc_uni
     adc_initialize(adc_config, adc_uint_conf);
 }
 
-static void ntc_temp_rgb_task(void *arg){
+static void ntc_temp_rgb_task(void *arg) {
     NTC_Config ntc_config;
     ADC_Config adc_config;
 
@@ -222,13 +233,6 @@ static void ntc_temp_rgb_task(void *arg){
     setup_rgb_temp(&rgb_led_temp);
     rgb_led_set_duty(&rgb_led_temp, 0, 0, 0);
 
-     Thresholds_Color received_thresholds = {
-        .threshold_R = {0, 0},
-        .threshold_G = {0, 0},
-        .threshold_B = {0, 0}
-    };
-    xQueueSend(threshold_queue_rgb, &received_thresholds, 0);
-
     int current_r = 0;
     int current_g = 0;
     int current_b = 0;
@@ -237,14 +241,14 @@ static void ntc_temp_rgb_task(void *arg){
     float voltage;
     float R;
     float T;
-    while (1){
+
+    Thresholds_Color received_thresholds;
+
+    while (1) {
         
-        if (xQueueReceive(threshold_queue_rgb, &received_thresholds, 0) == pdPASS) {
-            printf("Nuevos umbrales recibidos: R=[%.2f, %.2f], G=[%.2f, %.2f], B=[%.2f, %.2f]\n",
-                   received_thresholds.threshold_R[0], received_thresholds.threshold_R[1],
-                   received_thresholds.threshold_G[0], received_thresholds.threshold_G[1],
-                   received_thresholds.threshold_B[0], received_thresholds.threshold_B[1]);
-            sendData("New thresholds received");
+        if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
+            received_thresholds = current_thresholds;
+            xSemaphoreGive(thresholds_mutex);
         }
 
         raw = read_adc_raw(&adc_config);
@@ -263,21 +267,17 @@ static void ntc_temp_rgb_task(void *arg){
         } else {
             current_r = 0;
         }
-
         if (T >= received_thresholds.threshold_G[0] && T <= received_thresholds.threshold_G[1]) {
             current_g = 100;
         } else {
             current_g = 0;
         }
-
         if (T >= received_thresholds.threshold_B[0] && T <= received_thresholds.threshold_B[1]) {
             current_b = 100;
         } else {
             current_b = 0;
         }
-
         rgb_led_set_color(&rgb_led_temp, current_r, current_g, current_b);
-
         printf("R_NTC: %.2f, T_NTC: %.2f\n", R, T);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -285,7 +285,11 @@ static void ntc_temp_rgb_task(void *arg){
 
 void app_main(void)
 {   
-    threshold_queue_rgb = xQueueCreate(5, sizeof(Thresholds_Color));
+    thresholds_mutex = xSemaphoreCreateMutex();
+    if (thresholds_mutex == NULL) {
+        ESP_LOGE("APP_MAIN", "No se pudo crear el mutex");
+        return;
+    }
 
     init();
     xTaskCreate(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
