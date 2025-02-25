@@ -5,20 +5,17 @@
 #include "driver/uart.h"
 #include "string.h"
 #include "driver/gpio.h"
-#include "PWM_Control/include/pwm_control.h"
-#include "ADC_lib/include/adc_lib.h"
 #include "string.h"
 #include "freertos/semphr.h"
+#include "setup_all.c"
 
 static const int RX_BUF_SIZE = 1024;
 
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
 
-#define GPIO_INPUT_IO_0     0
-#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0))
-#define ESP_INTR_FLAG_DEFAULT 0
-
+#define ADC_UNIT_NTC ADC_UNIT_2
+#define ADC_UNIT_DIMMER ADC_UNIT_1
 #define UART_PORT UART_NUM_0
 
 typedef struct {
@@ -26,15 +23,40 @@ typedef struct {
     void (*handler)();
 } Command;
 
+typedef struct {
+    float threshold_R[2];
+    float threshold_G[2];
+    float threshold_B[2];
+} Thresholds_Color;
 
+static Thresholds_Color current_thresholds = {
+    .threshold_R = {0, 0},
+    .threshold_G = {0, 0},
+    .threshold_B = {0, 0}
+};
 SemaphoreHandle_t thresholds_mutex;
 
 static volatile float last_T = 0.0;
+static SemaphoreHandle_t temp_mutex; // Mutex para acceso seguro
 static volatile bool temp_print_enabled = true; // Habilitar impresión por defecto
 static SemaphoreHandle_t print_mutex; // Mutex para acceso seguro
 static TimerHandle_t print_timer; // Timer para impresión periódica
 
-int current_led = 0;
+enum current_led
+{
+    RED,
+    GREEN,
+    BLUE
+};
+
+typedef struct RGB_Values
+{
+    int red;
+    int green;
+    int blue;
+} RGB_Values;
+
+int current_led = RED;
 
 int sendData(const char* data)
 {
@@ -45,7 +67,6 @@ int sendData(const char* data)
     return txBytes;
 }
 
-/*
 void setup_range_RGB(char *arg) {
     char *color = strtok(arg, "$");
     char *down = strtok(NULL, "$");
@@ -90,7 +111,6 @@ void setup_range_RGB(char *arg) {
         sendData("Error: No se pudo actualizar los umbrales\n");
     }
 }
-*/
 
 void temp_on(char *arg) {
     (void)arg;
@@ -112,8 +132,21 @@ void temp_off(char *arg) {
     }
 }
 
-Command command_table[] = { //setup_range_RGB
-    { "#SET_RANGE", temp_off },\
+void print_temp_callback(TimerHandle_t xTimer) {
+    if (xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
+        float current_T = last_T; // Leer última temperatura
+        xSemaphoreGive(temp_mutex);
+
+        if (temp_print_enabled) {
+            char buffer[50];
+            snprintf(buffer, sizeof(buffer), "Temp: %.2f°C\n", current_T);
+            sendData(buffer);
+        }
+    }
+}
+
+Command command_table[] = {
+    { "#SET_RANGE", setup_range_RGB },\
     {"#TEMP_ON", temp_on},\
     {"#TEMP_OFF",temp_off},\
     {NULL, NULL} 
@@ -188,27 +221,120 @@ static void rx_task(void *arg)
     free(data);
 }
 
-static void IRAM_ATTR gpio_isr_handler(void* arg)
-{
-    current_led = (current_led + 1) % 3;
+void dimmer_RGB_task(void *arg) {
+    RGB_LED rgb_led_dimmer;
+    setup_rgb_dimmer(&rgb_led_dimmer);
+    rgb_led_set_color(&rgb_led_dimmer, 0, 0, 0);
+
+    config_adc_unit adc_uint_conf_dimmer = adc_init_adc_unit(ADC_UNIT_DIMMER);
+
+    ADC_Config adc_config_dimmer;
+    adc_config_dimmer.channel = CONFIG_ADC_CHANNEL_DIMMER;
+    adc_config_dimmer.bitwidth = ADC_BITWIDTH_DEFAULT;
+    adc_config_dimmer.atten = ADC_ATTEN_DB_12;
+
+    adc_initialize(&adc_config_dimmer, adc_uint_conf_dimmer);
+    static RGB_Values current_values_rgb = {0, 0, 0};   
+    int raw_dimmer;
+    
+    while(1){
+        raw_dimmer = read_adc_raw(&adc_config_dimmer);
+        fprintf(stderr, "Raw: %d\n", raw_dimmer);
+        if (current_led == RED)
+        {
+            current_values_rgb.red = raw_dimmer;
+        }
+        else if (current_led == GREEN)
+        {
+            current_values_rgb.green = raw_dimmer;
+        }else
+        {
+            current_values_rgb.blue = raw_dimmer;
+        }
+        rgb_led_set_duty(&rgb_led_dimmer, current_values_rgb.red, current_values_rgb.green, current_values_rgb.blue);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
-static void config_button(){
-    gpio_config_t io_conf = {};
-    io_conf.intr_type = GPIO_INTR_POSEDGE;
-    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
-    io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pull_down_en = 1;
-    gpio_config(&io_conf);
-    gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_POSEDGE);
-    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+static void ntc_temp_rgb_task(void *arg) {
+    NTC_Config ntc_config;
+    ADC_Config adc_config;
+
+    config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_NTC);
+
+    NTC_ADC_init(&adc_config, &ntc_config, adc_uint_conf);
+
+    RGB_LED rgb_led_temp;
+    setup_rgb_temp(&rgb_led_temp);
+    rgb_led_set_duty(&rgb_led_temp, 0, 0, 0);
+
+    int current_r = 0;
+    int current_g = 0;
+    int current_b = 0;
+
+    int raw;
+    float voltage;
+    float R;
+    float T;
+
+    Thresholds_Color received_thresholds;
+
+    while (1) {
+        
+        if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
+            received_thresholds = current_thresholds;
+            xSemaphoreGive(thresholds_mutex);
+        }
+
+        raw = read_adc_raw(&adc_config);
+        voltage = adc_raw_to_voltage(&adc_config, raw);
+
+        printf("Raw: %d, Voltage: %.2f V\n", raw, voltage);
+
+        R = R_NTC(&ntc_config, voltage);
+        T = T_NTC(&ntc_config, R);
+
+        if (xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
+            last_T = T;
+            xSemaphoreGive(temp_mutex);
+        }
+
+        if (T >= received_thresholds.threshold_R[0] && T <= received_thresholds.threshold_R[1]) {
+            current_r = 100;
+        } else {
+            current_r = 0;
+        }
+        if (T >= received_thresholds.threshold_G[0] && T <= received_thresholds.threshold_G[1]) {
+            current_g = 100;
+        } else {
+            current_g = 0;
+        }
+        if (T >= received_thresholds.threshold_B[0] && T <= received_thresholds.threshold_B[1]) {
+            current_b = 100;
+        } else {
+            current_b = 0;
+        }
+        rgb_led_set_color(&rgb_led_temp, current_r, current_g, current_b);
+        printf("R_NTC: %.2f, T_NTC: %.2f\n", R, T);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
 void app_main(void)
 {   
     config_button();
+    thresholds_mutex = xSemaphoreCreateMutex();
+    temp_mutex = xSemaphoreCreateMutex();
     print_mutex = xSemaphoreCreateMutex();
+
+    print_timer = xTimerCreate(
+        "PrintTempTimer",
+        pdMS_TO_TICKS(2000), // 2 segundos
+        pdTRUE, // Auto-reload
+        NULL,
+        print_temp_callback
+    );
+    xTimerStart(print_timer, 0);
 
     if (print_mutex == NULL || print_timer == NULL) {
         ESP_LOGE("APP_MAIN", "Error al crear recursos");
@@ -221,7 +347,8 @@ void app_main(void)
         ESP_LOGE("APP_MAIN", "No se pudo crear el mutex");
         return;
     }
-
     init();
     xTaskCreate(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
+    xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
+    xTaskCreate(dimmer_RGB_task, "dimmer_rbg_task", 4096, NULL, configMAX_PRIORITIES - 4, NULL);
 }

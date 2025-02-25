@@ -12,5 +12,8 @@
         "OPENOCD_SCRIPTS": "/home/jcardenas05/.espressif/tools/openocd-esp32/v0.12.0-esp32-20240318/openocd-esp32/share/openocd/scripts",
         "ESP_ROM_ELF_DIR": "/home/jcardenas05/.espressif/tools/esp-rom-elfs/20240305/",
         "IDF_TARGET": "esp32"
+    },
+    "files.associations": {
+        "semphr.h": "c"
     }
 }
