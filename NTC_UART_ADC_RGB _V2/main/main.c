@@ -7,16 +7,21 @@
 #include "driver/gpio.h"
 #include "string.h"
 #include "freertos/semphr.h"
-#include "setup_all.c"
+#include "peripherals.h"
+
+#include "PWM_Control/include/pwm_control.h"
+#include "ADC_lib/include/adc_lib.h"
+#include "NTC_lib/include/ntc_lib.h"
 
 static const int RX_BUF_SIZE = 1024;
 
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
+#define UART_PORT UART_NUM_0
 
 #define ADC_UNIT_NTC ADC_UNIT_2
 #define ADC_UNIT_DIMMER ADC_UNIT_1
-#define UART_PORT UART_NUM_0
+
 
 typedef struct {
     const char *command;

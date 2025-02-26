@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Prueba de RGB JSON</title>
+</head>
+<body>
+  <h1>Prueba de solicitud POST a /rgb_values.json</h1>
+  <button id="sendBtn">Enviar JSON</button>
+  
+  <script>
+    document.getElementById('sendBtn').addEventListener('click', function() {
+      // Ajusta la URL según la IP y el puerto de tu ESP32
+      const url = "http://192.168.1.52/ruta1";
+
+      let red = document.getElementById('wifi-ssid').value;
+      let green = 20;
+      let blue = 30;
+      
+      // Datos JSON a enviar
+      const rgbData = {
+        R: red,
+        G: green,
+        B: blue
+      };
+      
+      // Enviar la solicitud POST usando fetch
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(rgbData)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error HTTP, estado: ' + response.status);
+        }
+        return response.text();
+      })
+      .then(data => {
+        console.log('Respuesta del servidor:', data);
+        alert('Respuesta del servidor: ' + data);
+      })
+      .catch(err => {
+        console.error('Error en la solicitud:', err);
+        alert('Error en la solicitud: ' + err.message);
+      });
+    });
+  </script>
+</body>
+</html>
