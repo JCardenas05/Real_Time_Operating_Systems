@@ -16,9 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initTemperatura() {
     if (document.querySelector('.pagina-temperatura')) {
-        let temp = 25;
-        let max = temp;
-        let min = temp;
+        let max = -Infinity;
+        let min = Infinity;
         let isUpdating = false;
         let intervalId = null;
 
@@ -45,32 +44,34 @@ function initTemperatura() {
                                           temp < 30 ? colors.warm : colors.hot;
         }
 
-        function actualizarTemperatura() {
-            if (!isUpdating) return;
-
-            temp += (Math.random() - 0.5);
-            temp = Math.min(Math.max(temp, 15), 45);
-            
-            // Actualizar gauge (Celsius)
-            const circunferencia = 2 * Math.PI * 45;
-            elements.gaugeArc.style.strokeDasharray = `${((temp - 15)/30 * circunferencia)} ${circunferencia}`;
-            elements.gaugeText.textContent = `${temp.toFixed(1)}°C`;
-
-            // Actualizar display principal (Fahrenheit)
-            const tempF = (temp * 9/5 + 32).toFixed(1);
-            elements.tempActual.textContent = tempF;
-
-            // Actualizar máximos y mínimos
-            max = Math.max(max, temp);
-            min = Math.min(min, temp);
-
-            [elements.tempMaxC, elements.tempMinC].forEach((el, i) => 
-                el.textContent = (i ? min : max).toFixed(1));
-            
-            [elements.tempMaxF, elements.tempMinF].forEach((el, i) => 
-                el.textContent = (i ? min * 9/5 + 32 : max * 9/5 + 32).toFixed(1));
-
-            actualizarColor(temp);
+        function actualizarDesdeServidor() {
+            fetch('/temp_adc')
+                .then(response => response.json())
+                .then(data => {
+                    const tempC = data.temp;
+                    const tempF = (tempC * 9/5 + 32).toFixed(1);
+                    
+                    // Actualizar gauge
+                    const circunferencia = 2 * Math.PI * 45;
+                    elements.gaugeArc.style.strokeDasharray = 
+                        `${((tempC - 15)/30 * circunferencia)} ${circunferencia}`;
+                    elements.gaugeText.textContent = `${tempC.toFixed(1)}°C`;
+                    
+                    // Actualizar display principal
+                    elements.tempActual.textContent = tempF;
+                    
+                    // Actualizar máximos y mínimos
+                    max = Math.max(max, tempC);
+                    min = Math.min(min, tempC);
+                    
+                    elements.tempMaxC.textContent = max.toFixed(1);
+                    elements.tempMinC.textContent = min.toFixed(1);
+                    elements.tempMaxF.textContent = (max * 9/5 + 32).toFixed(1);
+                    elements.tempMinF.textContent = (min * 9/5 + 32).toFixed(1);
+                    
+                    actualizarColor(tempC);
+                })
+                .catch(error => console.error('Error:', error));
         }
 
         // Control del botón
@@ -79,18 +80,15 @@ function initTemperatura() {
             elements.toggleBtn.textContent = isUpdating ? 'Detener Lectura' : 'Iniciar Lectura';
             
             if (isUpdating) {
-                actualizarTemperatura();
-                intervalId = setInterval(actualizarTemperatura, 2000);
+                actualizarDesdeServidor(); // Primera actualización inmediata
+                intervalId = setInterval(actualizarDesdeServidor, 2000);
             } else {
                 clearInterval(intervalId);
             }
         });
 
         // Valores iniciales
-        actualizarColor(temp);
-        elements.tempActual.textContent = (temp * 9/5 + 32).toFixed(1);
-        elements.tempMaxC.textContent = elements.tempMinC.textContent = temp.toFixed(1);
-        elements.tempMaxF.textContent = elements.tempMinF.textContent = (temp * 9/5 + 32).toFixed(1);
+        actualizarColor(25); // Temperatura inicial por defecto
     }
 }
 
@@ -130,7 +128,31 @@ function initLED() {
         });
 
         document.getElementById('btn-actualizar').addEventListener('click', () => {
-            console.log('Valores LED:', colorActual);
+            const timeOn = document.getElementById('time-on').value;
+            const timeOff = document.getElementById('time-off').value;
+            const rojo = document.getElementById('rojo').value;
+            const verde = document.getElementById('verde').value;
+            const azul = document.getElementById('azul').value;
+            
+            // Enviar valores al ESP32
+            fetch('/actu_led', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    R: parseInt(rojo),
+                    G: parseInt(verde),
+                    B: parseInt(azul),
+                    t_on: parseInt(timeOn),
+                    t_off: parseInt(timeOff)
+                })
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Error en la respuesta');
+                console.log('LED actualizado correctamente');
+            })
+            .catch(error => console.error('Error:', error));
         });
 
         actualizarValores();
@@ -151,8 +173,27 @@ function initCredenciales() {
             e.preventDefault();
             const formData = new FormData(e.target);
             const datos = Object.fromEntries(formData.entries());
-            console.log('Credenciales actualizadas:', datos);
-            e.target.reset();
+            
+            // Enviar credenciales al ESP32
+            fetch('/update_credenciales', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams(formData)
+            })
+            .then(response => {
+                if (response.ok) {
+                    alert('Credenciales actualizadas correctamente');
+                    window.location.reload();
+                } else {
+                    throw new Error('Error en la actualización');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al actualizar credenciales');
+            });
         });
     }
 }

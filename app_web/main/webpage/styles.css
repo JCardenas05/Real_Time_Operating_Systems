@@ -655,3 +655,54 @@ body {
         width: 100%;
     }
 }
+
+/* Controles de tiempo */
+.controles-tiempo {
+    display: flex;
+    gap: 20px;
+    margin: 15px 0;
+    justify-content: center;
+}
+
+.control-tiempo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 15px;
+    border-radius: 10px;
+    backdrop-filter: blur(5px);
+    width: 150px;
+}
+
+.control-tiempo label {
+    color: #fff;
+    margin-bottom: 8px;
+    font-size: 0.9em;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+}
+
+.tiempo-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #4a4a4a;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    text-align: center;
+    font-size: 1em;
+    transition: all 0.3s ease;
+}
+
+.tiempo-input:focus {
+    outline: none;
+    border-color: #00ff88;
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.contenedor-botones {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 20px;
+}

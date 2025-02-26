@@ -8,8 +8,8 @@
 
 #define AP_SSID      "JCAR"        
 #define AP_PASS      "12345678"
-#define STA_SSID     "CLEMENTINA"
-#define STA_PASS     "24292764C"
+#define STA_SSID     "Deux"
+#define STA_PASS     "Furros2000"
 #define MAX_RETRY    5
 
 static const char *TAG = "wifi_manager";

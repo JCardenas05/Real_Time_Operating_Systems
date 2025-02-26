@@ -10,6 +10,7 @@
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
 #define UART_PORT UART_NUM_0
+RGB_LED rgb_led;
 
 static const int RX_BUF_SIZE = 1024;
 static volatile float last_T = 0.0;
@@ -230,6 +231,8 @@ static void rx_task(void *arg)
     free(data);
 }
 
+
+
 void print_temp_callback(TimerHandle_t xTimer) {
     if (xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
         float current_T = last_T; // Leer última temperatura
@@ -251,15 +254,20 @@ static esp_err_t mi_handler_1(httpd_req_t *req) {
 
 static esp_err_t get_values(httpd_req_t *req) {
     ESP_LOGI(TAG, "/dhtSensor.json requested");
+    float current_temp = 0.0;
+    if(xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
+        current_temp = last_T;
+        xSemaphoreGive(temp_mutex);
+    }
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "temp", 30.1);
-    cJSON_AddNumberToObject(root, "humidity", 40.5);
+    cJSON_AddNumberToObject(root, "temp", current_temp);
     char *json_string = cJSON_Print(root);
-    cJSON_Delete(root); // Liberar la memoria del objeto JSON
+    cJSON_Delete(root);
+    
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json_string, strlen(json_string));
-    free(json_string); // Liberar la memoria de la cadena JSON
-	httpd_resp_set_hdr(req, "Connection", "close");
+    free(json_string);
+    httpd_resp_set_hdr(req, "Connection", "close");
     return ESP_OK;
 }
 
@@ -318,10 +326,17 @@ static esp_err_t rgb_values_handler(httpd_req_t *req) {
 
     ESP_LOGI(TAG, "RGB values: red=%d, green=%d, blue=%d", red, green, blue);
     // Aquí podrías llamar a la función para cambiar el color del LED, por ejemplo:
-    // rgb_led_set_color(red, green, blue);
+    int red_percent = (red * 100) / 255;
+    int green_percent = (green * 100) / 255;
+    int blue_percent = (blue * 100) / 255;
+
+    rgb_led_set_color(&rgb_led, red_percent, green_percent, blue_percent);
 
     httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send(req, NULL, 0);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
 
     return ESP_OK;
 }
@@ -330,7 +345,7 @@ static esp_err_t rgb_values_handler(httpd_req_t *req) {
 http_server_uri_t uris[] = {
 	{
 		.uri = {
-			.uri = "/ruta1",
+			.uri = "/actu_led",
 			.method = HTTP_POST,
 			.handler = rgb_values_handler,
 			.user_ctx = NULL
@@ -338,7 +353,7 @@ http_server_uri_t uris[] = {
 	},
 	{
 		.uri = {
-			.uri = "/ruta2",
+			.uri = "/temp_adc",
 			.method = HTTP_GET,
 			.handler = get_values,
 			.user_ctx = NULL
@@ -350,7 +365,8 @@ size_t uris_length = sizeof(uris) / sizeof(uris[0]);
 
 void app_main(void)
 {
-    
+    temp_mutex = xSemaphoreCreateMutex();
+
 	esp_err_t ret = nvs_flash_init(); // Initialize NVS
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
 	{
@@ -360,6 +376,7 @@ void app_main(void)
 	ESP_ERROR_CHECK(ret);
     wifi_manager_start();
 	http_server_start(uris, uris_length);
+    setup_rgb_temp(&rgb_led);
 
     //xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
 }
