@@ -8,10 +8,18 @@ static QueueHandle_t http_server_monitor_queue_handle;
 
 extern const uint8_t index_html_start[]				asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]				asm("_binary_index_html_end");
-extern const uint8_t app_css_start[]				asm("_binary_app_css_start");
-extern const uint8_t app_css_end[]					asm("_binary_app_css_end");
-extern const uint8_t app_js_start[]					asm("_binary_app_js_start");
-extern const uint8_t app_js_end[]					asm("_binary_app_js_end");
+extern const uint8_t lectura_pot_html_start[]		asm("_binary_lectura_pot_html_start");
+extern const uint8_t lectura_pot_html_end[]			asm("_binary_lectura_pot_html_end");
+extern const uint8_t lectura_temp_html_start[]		asm("_binary_lectura_temp_html_start");
+extern const uint8_t lectura_temp_html_end[]		asm("_binary_lectura_temp_html_end");
+extern const uint8_t led_rgb_html_start[]			asm("_binary_led_rgb_html_start");
+extern const uint8_t led_rgb_html_end[]				asm("_binary_led_rgb_html_end"); 
+extern const uint8_t credenciales_html_start[]		asm("_binary_credenciales_html_start");
+extern const uint8_t credenciales_html_end[]		asm("_binary_credenciales_html_end");
+extern const uint8_t app_css_start[]				asm("_binary_styles_css_start");
+extern const uint8_t app_css_end[]					asm("_binary_styles_css_end");
+extern const uint8_t app_js_start[]					asm("_binary_scripts_js_start");
+extern const uint8_t app_js_end[]					asm("_binary_scripts_js_end");
 
 /**
  * HTTP server monitor task used to track events of the HTTP server
@@ -50,9 +58,41 @@ static esp_err_t http_server_index_html_handler(httpd_req_t *req)
 	return ESP_OK;
 }
 
+static esp_err_t http_server_lectura_pot_html_handler(httpd_req_t *req)
+{
+	ESP_LOGI(TAG, "lectura_pot.html requested");
+	httpd_resp_set_type(req, "text/html");
+	httpd_resp_send(req, (const char *)lectura_pot_html_start, lectura_pot_html_end - lectura_pot_html_start);
+	return ESP_OK;
+}
+
+static esp_err_t http_server_lectura_temp_html_handler(httpd_req_t *req)
+{
+	ESP_LOGI(TAG, "lectura_temp.html requested");
+	httpd_resp_set_type(req, "text/html");
+	httpd_resp_send(req, (const char *)lectura_temp_html_start, lectura_temp_html_end - lectura_temp_html_start);
+	return ESP_OK;
+}
+
+static esp_err_t http_server_led_rgb_html_handler(httpd_req_t *req)
+{
+	ESP_LOGI(TAG, "led_rgb.html requested");
+	httpd_resp_set_type(req, "text/html");
+	httpd_resp_send(req, (const char *)led_rgb_html_start, led_rgb_html_end - led_rgb_html_start);
+	return ESP_OK;
+}
+
+static esp_err_t http_server_credenciales_html_handler(httpd_req_t *req)
+{
+	ESP_LOGI(TAG, "credenciales.html requested");
+	httpd_resp_set_type(req, "text/html");
+	httpd_resp_send(req, (const char *)credenciales_html_start, credenciales_html_end - credenciales_html_start);
+	return ESP_OK;
+}
+
 static esp_err_t http_server_app_css_handler(httpd_req_t *req)
 {
-	ESP_LOGI(TAG, "app.css requested");
+	ESP_LOGI(TAG, "styles.css requested");
 	httpd_resp_set_type(req, "text/css");
 	httpd_resp_send(req, (const char *)app_css_start, app_css_end - app_css_start);
 	return ESP_OK;
@@ -60,7 +100,7 @@ static esp_err_t http_server_app_css_handler(httpd_req_t *req)
 
 static esp_err_t http_server_app_js_handler(httpd_req_t *req)
 {
-	ESP_LOGI(TAG, "app.js requested");
+	ESP_LOGI(TAG, "scripts.js requested");
 	httpd_resp_set_type(req, "application/javascript");
 	httpd_resp_send(req, (const char *)app_js_start, app_js_end - app_js_start);
 	return ESP_OK;
@@ -104,8 +144,40 @@ static httpd_handle_t http_server_configure(http_server_uri_array_t uris, size_t
 		};
 		httpd_register_uri_handler(http_server_handle, &index_html);
 
+		httpd_uri_t lectura_pot_html = { // register lectura_pot.html handler
+				.uri = "/lectura_pot",
+				.method = HTTP_GET,
+				.handler = http_server_lectura_pot_html_handler,
+				.user_ctx = NULL
+		};
+		httpd_register_uri_handler(http_server_handle, &lectura_pot_html);
+
+		httpd_uri_t lectura_temp_html = { // register lectura_temp.html handler
+				.uri = "/lectura_temp",
+				.method = HTTP_GET,
+				.handler = http_server_lectura_temp_html_handler,
+				.user_ctx = NULL
+		};
+		httpd_register_uri_handler(http_server_handle, &lectura_temp_html);
+
+		httpd_uri_t led_rgb_html = { // register led_rgb.html handler
+				.uri = "/led_rgb",
+				.method = HTTP_GET,
+				.handler = http_server_led_rgb_html_handler,
+				.user_ctx = NULL
+		};
+		httpd_register_uri_handler(http_server_handle, &led_rgb_html);
+
+		httpd_uri_t credenciales_html = { // register credenciales.html handler
+				.uri = "/credenciales",
+				.method = HTTP_GET,
+				.handler = http_server_credenciales_html_handler,
+				.user_ctx = NULL
+		};
+		httpd_register_uri_handler(http_server_handle, &credenciales_html);
+
 		httpd_uri_t app_css = { // register app.css handler
-				.uri = "/app.css",
+				.uri = "/styles.css",
 				.method = HTTP_GET,
 				.handler = http_server_app_css_handler,
 				.user_ctx = NULL
@@ -113,7 +185,7 @@ static httpd_handle_t http_server_configure(http_server_uri_array_t uris, size_t
 		httpd_register_uri_handler(http_server_handle, &app_css);
 
 		httpd_uri_t app_js = {  // register app.js handler
-				.uri = "/app.js",
+				.uri = "/scripts.js",
 				.method = HTTP_GET,
 				.handler = http_server_app_js_handler,
 				.user_ctx = NULL

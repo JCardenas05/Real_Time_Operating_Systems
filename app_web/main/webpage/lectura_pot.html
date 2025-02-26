@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Electrónica</title>
+    <title>Potenciómetro</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="pagina-principal">
+<body class="pagina-secundaria pagina-potenciometro">
+
     <!-- Fondo animado -->
     <div class="box-of-star1">
         <div class="star star-position1"></div>
@@ -44,17 +45,27 @@
         <div class="star star-position6"></div>
         <div class="star star-position7"></div>
     </div>
-    
 
-    <div class="container">
-        <h1 class="titulo-menu">Menú</h1>
-        <div class="botones-grid">
-            <a href="credenciales" class="boton">CAMBIAR CREDENCIALES</a>
-            <a href="led_rgb" class="boton">CONTROL LED</a>
-            <a href="lectura_temp" class="boton">LECTURA TEMPERATURA</a>
-            <a href="lectura_pot" class="boton">LECTURA TENSIÓN</a>
+    <div class="contenedor-principal">
+        <h1>VISUALIZACIÓN DE TEMPERATURA</h1>
+
+        <div class="grafica-container">
+            <canvas id="grafica-pot"></canvas>
+        </div>
+        
+        <div class="indicador-analogico">
+            <div class="escala-pot">
+                <div class="aguja-pot" id="aguja-pot"></div>
+            </div>
+            <div class="valor-digital" id="valor-pot">0</div>
+        </div>
+
+        <div class="contenedor-botones">
+            <button id="toggle-lectura-pot" class="boton-lectura">Iniciar Lectura</button>
+            <button class="boton-volver" onclick="history.back()">Volver al Menú</button>
         </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="scripts.js"></script>
 </body>
 </html>

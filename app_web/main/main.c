@@ -361,5 +361,5 @@ void app_main(void)
     wifi_manager_start();
 	http_server_start(uris, uris_length);
 
-    xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
+    //xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
 }

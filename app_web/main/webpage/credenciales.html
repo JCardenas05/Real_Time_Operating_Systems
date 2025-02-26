@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cambiar Credenciales</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="pagina-secundaria pagina-credenciales">
+
+    <!-- Fondo animado -->
+    <div class="box-of-star1">
+        <div class="star star-position1"></div>
+        <div class="star star-position2"></div>
+        <div class="star star-position3"></div>
+        <div class="star star-position4"></div>
+        <div class="star star-position5"></div>
+        <div class="star star-position6"></div>
+        <div class="star star-position7"></div>
+    </div>
+    <div class="box-of-star2">
+        <div class="star star-position1"></div>
+        <div class="star star-position2"></div>
+        <div class="star star-position3"></div>
+        <div class="star star-position4"></div>
+        <div class="star star-position5"></div>
+        <div class="star star-position6"></div>
+        <div class="star star-position7"></div>
+    </div>
+    <div class="box-of-star3">
+        <div class="star star-position1"></div>
+        <div class="star star-position2"></div>
+        <div class="star star-position3"></div>
+        <div class="star star-position4"></div>
+        <div class="star star-position5"></div>
+        <div class="star star-position6"></div>
+        <div class="star star-position7"></div>
+    </div>
+    <div class="box-of-star4">
+        <div class="star star-position1"></div>
+        <div class="star star-position2"></div>
+        <div class="star star-position3"></div>
+        <div class="star star-position4"></div>
+        <div class="star star-position5"></div>
+        <div class="star star-position6"></div>
+        <div class="star star-position7"></div>
+    </div>
+    
+    <div class="contenedor-principal">
+        <h1>ADMINISTRAR CREDENCIALES</h1>
+        
+        <div class="formulario-credenciales">
+            <form id="form-credenciales">
+                <!-- AP SSID -->
+                <div class="grupo-input">
+                    <div class="input-container">
+                        <span class="input-icon icon-wifi"></span>
+                        <input type="text" 
+                               id="ap-ssid" 
+                               required 
+                               placeholder="SSID del AP">
+                    </div>
+                </div>
+
+                <!-- AP Password -->
+                <div class="grupo-input">
+                    <div class="input-container">
+                        <span class="input-icon icon-lock"></span>
+                        <input type="password" 
+                               id="ap-pass" 
+                               required
+                               placeholder="Contraseña del AP">
+                        <button type="button" 
+                                class="contenedor-ojo" 
+                                data-target="ap-pass">
+                            <span class="eye-icon"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- STA SSID -->
+                <div class="grupo-input">
+                    <div class="input-container">
+                        <span class="input-icon icon-network"></span>
+                        <input type="text" 
+                               id="sta-ssid" 
+                               required
+                               placeholder="SSID de la Red">
+                    </div>
+                </div>
+
+                <!-- STA Password -->
+                <div class="grupo-input">
+                    <div class="input-container">
+                        <span class="input-icon icon-key"></span>
+                        <input type="password" 
+                               id="sta-pass" 
+                               required
+                               placeholder="Contraseña de la Red">
+                        <button type="button" 
+                                class="contenedor-ojo" 
+                                data-target="sta-pass">
+                            <span class="eye-icon"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="boton-enviar">ACTUALIZAR CREDENCIALES</button>
+            </form>
+        </div>
+        
+        <div class="contenedor-boton-volver">
+            <div class="button">
+              <button class="boton-volver" onclick="window.location.href='index.html'">Volver al Menú</button>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+    </div>
+    <script src="scripts.js"></script>
+</body>
+</html>

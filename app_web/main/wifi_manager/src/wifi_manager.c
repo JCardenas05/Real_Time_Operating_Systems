@@ -73,8 +73,8 @@ void configure_ip_ap(void){
     }
 
     esp_netif_ip_info_t ip_info;
-    IP4_ADDR(&ip_info.ip, 192, 168, 2, 1);  // Nueva IP del AP
-    IP4_ADDR(&ip_info.gw, 192, 168, 2, 1);  // Gateway
+    IP4_ADDR(&ip_info.ip, 192, 168, 3, 1);  // Nueva IP del AP
+    IP4_ADDR(&ip_info.gw, 192, 168, 3, 1);  // Gateway
     IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);  // Máscara de subred
 
 

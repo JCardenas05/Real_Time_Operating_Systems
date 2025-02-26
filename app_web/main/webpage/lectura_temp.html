@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Electrónica</title>
+    <title>Temperatura</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="pagina-principal">
+<body class="pagina-secundaria pagina-temperatura">
+
     <!-- Fondo animado -->
     <div class="box-of-star1">
         <div class="star star-position1"></div>
@@ -44,16 +45,37 @@
         <div class="star star-position6"></div>
         <div class="star star-position7"></div>
     </div>
-    
 
-    <div class="container">
-        <h1 class="titulo-menu">Menú</h1>
-        <div class="botones-grid">
-            <a href="credenciales" class="boton">CAMBIAR CREDENCIALES</a>
-            <a href="led_rgb" class="boton">CONTROL LED</a>
-            <a href="lectura_temp" class="boton">LECTURA TEMPERATURA</a>
-            <a href="lectura_pot" class="boton">LECTURA TENSIÓN</a>
+    <div class="contenedor-principal">
+        <h1>VISUALIZACIÓN TENSIÓN</h1>
+        <button id="toggle-lectura" class="boton-lectura">Iniciar Lectura</button>
+        
+        <div class="visualizador-temperatura">
+            <svg class="gauge" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="45" class="gauge-base"/>
+                <circle cx="50" cy="50" r="45" class="gauge-arc" fill="none" stroke-width="10"/>
+                <text x="50" y="55" class="gauge-text">0°C</text>
+            </svg>
+            
+            <div class="detalles-temperatura">
+                <div class="lectura-actual">
+                    <span class="valor" id="temperatura-actual">--</span>
+                    <span class="unidad">°F</span>
+                </div>
+                <div class="estadisticas">
+                    <div>Máx: 
+                        <span id="temp-max-c">--</span>°C 
+                        (<span id="temp-max-f">--</span>°F)
+                    </div>
+                    <div>Mín: 
+                        <span id="temp-min-c">--</span>°C 
+                        (<span id="temp-min-f">--</span>°F)
+                    </div>
+                </div>
+            </div>
         </div>
+        
+        <button class="boton-volver" onclick="window.location.href='index.html'">Volver al Menú</button>
     </div>
     <script src="scripts.js"></script>
 </body>

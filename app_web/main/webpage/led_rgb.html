@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Control Electrónica</title>
+    <title>Control LED</title>
     <link rel="stylesheet" href="styles.css">
 </head>
-<body class="pagina-principal">
+<body class="pagina-secundaria pagina-led">
+
     <!-- Fondo animado -->
     <div class="box-of-star1">
         <div class="star star-position1"></div>
@@ -45,15 +46,48 @@
         <div class="star star-position7"></div>
     </div>
     
+    <div class="contenedor-principal">
+        <h1>CAMBIO DE COLOR RGB</h1>
+        
+        <div class="control-led">
+            <div class="selector-color">
+                <input type="color" id="color-picker" value="#ff0000">
+                <div class="preview-color" id="color-preview"></div>
+            </div>
 
-    <div class="container">
-        <h1 class="titulo-menu">Menú</h1>
-        <div class="botones-grid">
-            <a href="credenciales" class="boton">CAMBIAR CREDENCIALES</a>
-            <a href="led_rgb" class="boton">CONTROL LED</a>
-            <a href="lectura_temp" class="boton">LECTURA TEMPERATURA</a>
-            <a href="lectura_pot" class="boton">LECTURA TENSIÓN</a>
+            
+            
+            <div class="controles-rgb">
+                <div class="control-canal">
+                    <label for="rojo">Rojo</label>
+                    <input type="range" min="0" max="255" value="255" class="slider" id="rojo">
+                    <span class="valor-canal" id="valor-rojo">255</span>
+                </div>
+                
+                <div class="control-canal">
+                    <label for="verde">Verde</label>
+                    <input type="range" min="0" max="255" value="0" class="slider" id="verde">
+                    <span class="valor-canal" id="valor-verde">0</span>
+                </div>
+                
+                <div class="control-canal">
+                    <label for="azul">Azul</label>
+                    <input type="range" min="0" max="255" value="0" class="slider" id="azul">
+                    <span class="valor-canal" id="valor-azul">0</span>
+                </div>
+            </div>
+            
+            <div class="contenedor-boton">
+                <button class="boton-actualizar" id="btn-actualizar">
+                    <span class="texto-boton">ACTUALIZAR LED</span>
+                    <div class="efecto-hover"></div>
+                </button>
+            </div>
         </div>
+
+        
+        
+        <button class="boton-volver" onclick="window.location.href='index.html'">Volver al Menú</button>
     </div>
     <script src="scripts.js"></script>
 </body>
