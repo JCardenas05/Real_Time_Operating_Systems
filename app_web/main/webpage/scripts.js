@@ -225,7 +225,7 @@ function initPotenciometro() {
                 scales: {
                     y: {
                         min: 0,
-                        max: 5,
+                        max: 4095,
                         title: {
                             display: true,
                             text: 'Voltios (V)'
@@ -243,30 +243,30 @@ function initPotenciometro() {
         const aguja = document.getElementById('aguja-pot');
         const valorDigital = document.getElementById('valor-pot');
 
-        // Generar valor aleatorio de voltaje (0-5V)
-        function generarVoltaje() {
-            return (Math.random() * 5).toFixed(2);
-        }
-
         function actualizarDatos() {
             if (!isReading) return;
-            
-            const voltaje = generarVoltaje();
-            const timestamp = new Date().toLocaleTimeString();
-            
-            // Actualizar gráfica
-            if (data.labels.length > 20) {
-                data.labels.shift();
-                data.datasets[0].data.shift();
-            }
-            data.labels.push(timestamp);
-            data.datasets[0].data.push(voltaje);
-            chart.update();
-            
-            // Actualizar indicadores
-            const grados = (voltaje / 5) * 270 - 45; // Convertir 0-5V a -45° a 225°
-            aguja.style.transform = `rotate(${grados}deg)`;
-            valorDigital.textContent = voltaje;
+
+            fetch('/dimmer')
+                .then(response => response.json())
+                .then(dataResponse => {
+                    const voltaje = dataResponse.dimmer;
+                    const timestamp = new Date().toLocaleTimeString();
+                    
+                    // Actualizar gráfica
+                    if (data.labels.length > 20) {
+                        data.labels.shift();
+                        data.datasets[0].data.shift();
+                    }
+                    data.labels.push(timestamp);
+                    data.datasets[0].data.push(voltaje);
+                    chart.update();
+                    
+                    // Actualizar indicadores
+                    const grados = (voltaje / 5) * 270 - 45; // Convertir 0-5V a -45° a 225°
+                    aguja.style.transform = `rotate(${grados}deg)`;
+                    valorDigital.textContent = voltaje;
+                })
+                .catch(error => console.error('Error obteniendo el voltaje:', error));
         }
 
         // Control del botón
@@ -285,6 +285,7 @@ function initPotenciometro() {
         aguja.style.transform = `rotate(-45deg)`;
     }
 }
+
 
 // Funciones utilitarias
 function hexToRgb(hex) {

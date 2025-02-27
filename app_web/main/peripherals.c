@@ -8,7 +8,8 @@ static RGB_LED rgb_led_temp;
 static RGB_LED rgb_led_dimmer;
 
 /* Definición de la variable global (declarada en el .h) */
-int current_led = 0;
+volatile int current_led = 0;
+
 
 void setup_rgb_temp(RGB_LED *rgb_led_temp) {
     rgb_led_temp->red.gpio_num = GPIO_R_TEMP;
@@ -89,8 +90,8 @@ static void config_button(){
 }
 
 void init_rgb_leds(void) {
-    setup_rgb_temp(&rgb_led_temp);
-    setup_rgb_dimmer(&rgb_led_dimmer);
+    //setup_rgb_temp(&rgb_led_temp);
+    //setup_rgb_dimmer(&rgb_led_dimmer);
 }
 
 void init_button(void) {

@@ -1,25 +1,54 @@
-#include <stdio.h>
-#include "nvs_flash.h"
-#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_system.h"
+#include "esp_log.h"
 #include "driver/uart.h"
+#include "string.h"
+#include "driver/gpio.h"
+#include "PWM_Control/include/pwm_control.h"
+#include "ADC_lib/include/adc_lib.h"
+#include "NTC_lib/include/ntc_lib.h"
+#include "string.h"
+#include "freertos/semphr.h"
 #include "server/include/server.h"
 #include "wifi_manager/include/wifi_manager.h"
+#include "nvs_flash.h"
 #include "cJSON.h"
-#include "peripherals.h"
+
+static const char *TAG = "main";
+RGB_LED rgb_led;
+RGB_LED rgb_led_temp;
+
+static const int RX_BUF_SIZE = 1024;
 
 #define TXD_PIN (GPIO_NUM_1)
 #define RXD_PIN (GPIO_NUM_3)
+
+#define GPIO_INPUT_IO_0     0
+#define GPIO_INPUT_PIN_SEL  ((1ULL<<GPIO_INPUT_IO_0))
+#define ESP_INTR_FLAG_DEFAULT 0
+#define GPIO_R_TEMP 21
+#define GPIO_G_TEMP 19
+#define GPIO_B_TEMP 18
+
+#define GPIO_R_DIMMER 12
+#define GPIO_G_DIMMER 27
+#define GPIO_B_DIMMER 26
+
+#define ADC_UNIT_NTC ADC_UNIT_1
+#define ADC_UNIT_DIMMER ADC_UNIT_1
+
+#define CONFIG_ADC_CHANNEL_NTC ADC_CHANNEL_4
+#define CONFIG_ADC_CHANNEL_DIMMER ADC_CHANNEL_5
+
 #define UART_PORT UART_NUM_0
-RGB_LED rgb_led;
 
-static const int RX_BUF_SIZE = 1024;
-static volatile float last_T = 0.0;
-static SemaphoreHandle_t temp_mutex; // Mutex para acceso seguro
-static volatile bool temp_print_enabled = true; // Habilitar impresión por defecto
-static SemaphoreHandle_t print_mutex; // Mutex para acceso seguro
-static TimerHandle_t print_timer; // Timer para impresión periódica
+#define NTC_B 3200
+#define NTC_R0 47
+#define NTC_T0 298.15
+#define NTC_R1 100
 
-static const char *TAG = "main";
+
 
 typedef struct {
     const char *command;
@@ -39,6 +68,32 @@ static Thresholds_Color current_thresholds = {
 };
 SemaphoreHandle_t thresholds_mutex;
 
+static volatile float last_T = 0.0;
+static SemaphoreHandle_t temp_mutex; // Mutex para acceso seguro
+static volatile bool temp_print_enabled = true; // Habilitar impresión por defecto
+static SemaphoreHandle_t print_mutex; // Mutex para acceso seguro
+static TimerHandle_t print_timer; // Timer para impresión periódica
+
+uint32_t dimmer_value;
+
+config_adc_unit adc_uint_conf; 
+
+enum current_led
+{
+    RED,
+    GREEN,
+    BLUE
+};
+
+typedef struct RGB_Values
+{
+    int red;
+    int green;
+    int blue;
+} RGB_Values;
+
+int current_led = RED;
+
 int sendData(const char* data)
 {
     static const char *TAG = "SEND_DATA";
@@ -48,41 +103,277 @@ int sendData(const char* data)
     return txBytes;
 }
 
-void setup_range_RGB_handle(const char color, float down, float up) {
+void setup_range_RGB(char *arg) {
+    char *color = strtok(arg, "$");
+    char *down = strtok(NULL, "$");
+    char *up = strtok(NULL, "$");
 
-    if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) != pdTRUE) {
+    if (color == NULL || down == NULL || up == NULL) {
+        sendData("Error: Argumentos insuficientes\n");
+        return;
+    }
+
+    Thresholds_Color thresholds;
+    if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
+        thresholds = current_thresholds;
+        xSemaphoreGive(thresholds_mutex);
+    } else {
         sendData("Error: No se pudo acceder al mutex\n");
         return;
     }
 
+    float new_down = atof(down);
+    float new_up = atof(up);
+
     if (strcmp(color, "R") == 0) {
-        current_thresholds.threshold_R[0] = down;
-        current_thresholds.threshold_R[1] = up;
+        thresholds.threshold_R[0] = new_down;
+        thresholds.threshold_R[1] = new_up;
     } else if (strcmp(color, "G") == 0) {
-        current_thresholds.threshold_G[0] = down;
-        current_thresholds.threshold_G[1] = up;
+        thresholds.threshold_G[0] = new_down;
+        thresholds.threshold_G[1] = new_up;
     } else if (strcmp(color, "B") == 0) {
-        current_thresholds.threshold_B[0] = down;
-        current_thresholds.threshold_B[1] = up;
+        thresholds.threshold_B[0] = new_down;
+        thresholds.threshold_B[1] = new_up;
     } else {
-        xSemaphoreGive(thresholds_mutex);
         sendData("Error: Color no válido\n");
         return;
     }
-    xSemaphoreGive(thresholds_mutex);
-    sendData("Updating RGB LED range\n");
+
+    if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
+        current_thresholds = thresholds;
+        xSemaphoreGive(thresholds_mutex);
+        sendData("Updating RGB LED range\n");
+    } else {
+        sendData("Error: No se pudo actualizar los umbrales\n");
+    }
+}
+
+void temp_on(char *arg) {
+    (void)arg;
+     if (xSemaphoreTake(print_mutex, portMAX_DELAY) == pdTRUE) {
+        temp_print_enabled = true;
+        xTimerStart(print_timer, 0); // Iniciar/Reiniciar timer
+        xSemaphoreGive(print_mutex);
+        sendData("TEMP prints ENABLED (every 2s)\n");
+    }
+}
+
+void temp_off(char *arg) {
+    (void)arg;
+      if (xSemaphoreTake(print_mutex, portMAX_DELAY) == pdTRUE) {
+        temp_print_enabled = false;
+        xTimerStop(print_timer, 0); // Detener timer
+        xSemaphoreGive(print_mutex);
+        sendData("TEMP prints DISABLED\n");
+    }
+}
+
+
+void print_temp_callback(TimerHandle_t xTimer) {
+    if (xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
+        float current_T = last_T; // Leer última temperatura
+        xSemaphoreGive(temp_mutex);
+
+        if (temp_print_enabled) {
+            char buffer[50];
+            snprintf(buffer, sizeof(buffer), "Temp: %.2f°C\n", current_T);
+            sendData(buffer);
+        }
+    }
+}
+
+Command command_table[] = {
+    { "#SET_RANGE", setup_range_RGB },\
+    {"#TEMP_ON", temp_on},\
+    {"#TEMP_OFF",temp_off},\
+    {NULL, NULL} 
+};
+
+void process_command(const char *input) {
+    char input_copy[256]; // Copia de la entrada
+    strncpy(input_copy, input, sizeof(input_copy));
+    input_copy[sizeof(input_copy) - 1] = '\0'; // Aseguramos el fin de la cadena
+
+    char *command;
+    char *arg;
+    command = strtok(input_copy, "$");
+    arg = strtok(NULL, "");
+
+    if (command == NULL) {
+        printf("Error: No se encontró un comando\n");
+        return;
+    }
+
+    for (int i = 0; command_table[i].command != NULL; i++) {
+        if (strcmp(command, command_table[i].command) == 0) {
+            command_table[i].handler(arg);
+            if (arg != NULL) {
+                printf("Command '%s' processed with argument '%s'\n", command, arg);
+            } else {
+                printf("Command '%s' processed with no arguments\n", command);
+            }
+            return;
+        }
+    }
+    printf("Error: Command '%s' not found\n", command);
+}
+
+void init(void)
+{
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    uart_driver_install(UART_PORT, RX_BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_param_config(UART_PORT, &uart_config);
+    uart_set_pin(UART_PORT, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+}
+
+static void rx_task(void *arg)
+{
+    static const char *RX_TASK_TAG = "RX_TASK";
+    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
+    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
+
+    if (data == NULL) {
+        ESP_LOGE(RX_TASK_TAG, "Error al asignar memoria para el buffer UART");
+        vTaskDelete(NULL); // Finaliza la tarea si no hay memoria
+    }
+
+    while (1) {
+        const int rxBytes = uart_read_bytes(UART_PORT, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
+        if (rxBytes > 0) {
+            data[rxBytes] = 0;
+            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
+            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
+            sendData("Data received\n");
+            sendData((char*) data);
+            process_command((char*) data);
+        }
+    }
+    free(data);
+}
+//endregion
+
+static void setup_rgb_dimmer(RGB_LED *rgb_led_dimmer) {
+    rgb_led_dimmer->red.gpio_num = GPIO_R_DIMMER;
+    rgb_led_dimmer->red.channel = LEDC_CHANNEL_3;
+
+    rgb_led_dimmer->green.gpio_num = GPIO_G_DIMMER;
+    rgb_led_dimmer->green.channel = LEDC_CHANNEL_4;
+
+    rgb_led_dimmer->blue.gpio_num = GPIO_B_DIMMER;
+    rgb_led_dimmer->blue.channel = LEDC_CHANNEL_5;
+
+    rgb_led_dimmer->config.mode = LEDC_LOW_SPEED_MODE;
+    rgb_led_dimmer->config.timer = LEDC_TIMER_1;
+    rgb_led_dimmer->config.duty_res = LEDC_TIMER_13_BIT;
+    rgb_led_dimmer->config.frequency = 4000;
+    rgb_led_dimmer->config.invert = 1;
+
+    rgb_led_init(rgb_led_dimmer);
+    printf("RGB LED Dimmer configured\n");
+}
+
+static void setup_rgb_temp(RGB_LED *rgb_led_temp) {
+    rgb_led_temp->red.gpio_num = GPIO_R_TEMP;
+    rgb_led_temp->red.channel = LEDC_CHANNEL_0;
+
+    rgb_led_temp->green.gpio_num = GPIO_G_TEMP;
+    rgb_led_temp->green.channel = LEDC_CHANNEL_1;
+
+    rgb_led_temp->blue.gpio_num = GPIO_B_TEMP;
+    rgb_led_temp->blue.channel = LEDC_CHANNEL_2;
+
+    rgb_led_temp->config.mode = LEDC_LOW_SPEED_MODE;
+    rgb_led_temp->config.timer = LEDC_TIMER_0;
+    rgb_led_temp->config.duty_res = LEDC_TIMER_13_BIT;
+    rgb_led_temp->config.frequency = 4000;
+    rgb_led_temp->config.invert = 0;
+
+    rgb_led_init(rgb_led_temp);
+    printf("RGB LED Temp configured\n");
+}
+
+void dimmer_RGB_task(void *arg) {
+    RGB_LED rgb_led_dimmer;
+    setup_rgb_dimmer(&rgb_led_dimmer);
+    rgb_led_set_color(&rgb_led_dimmer, 0, 0, 0);
+
+    //config_adc_unit adc_uint_conf_dimmer = adc_init_adc_unit(ADC_UNIT_DIMMER);
+
+    ADC_Config adc_config_dimmer;
+    adc_config_dimmer.channel = CONFIG_ADC_CHANNEL_DIMMER;
+    adc_config_dimmer.bitwidth = ADC_BITWIDTH_DEFAULT;
+    adc_config_dimmer.atten = ADC_ATTEN_DB_12;
+
+    adc_initialize(&adc_config_dimmer, adc_uint_conf);
+    static RGB_Values current_values_rgb = {0, 0, 0};   
+    int raw_dimmer;
+    
+    while(1){
+        raw_dimmer = read_adc_raw(&adc_config_dimmer);
+        dimmer_value = raw_dimmer;
+        fprintf(stderr, "Raw: %d\n", raw_dimmer);
+        if (current_led == RED)
+        {
+            current_values_rgb.red = raw_dimmer;
+        }
+        else if (current_led == GREEN)
+        {
+            current_values_rgb.green = raw_dimmer;
+        }else
+        {
+            current_values_rgb.blue = raw_dimmer;
+        }
+        rgb_led_set_duty(&rgb_led_dimmer, current_values_rgb.red, current_values_rgb.green, current_values_rgb.blue);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void NTC_ADC_init(ADC_Config *adc_config, NTC_Config *ntc_config, config_adc_unit adc_uint_conf){
+    adc_config->channel = CONFIG_ADC_CHANNEL_NTC;
+    adc_config->bitwidth = ADC_BITWIDTH_DEFAULT;
+    adc_config->atten = ADC_ATTEN_DB_12;
+    ntc_config->b = NTC_B;
+    ntc_config->R0 = NTC_R0;
+    ntc_config->T0 = NTC_T0;
+    ntc_config->R1 = NTC_R1;
+    adc_initialize(adc_config, adc_uint_conf);
+}
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    current_led = (current_led + 1) % 3;
+}
+
+static void config_button(){
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_POSEDGE;
+    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = 1;
+    gpio_config(&io_conf);
+    gpio_set_intr_type(GPIO_INPUT_IO_0, GPIO_INTR_POSEDGE);
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
 }
 
 static void ntc_temp_rgb_task(void *arg) {
     NTC_Config ntc_config;
     ADC_Config adc_config;
 
-    config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_NTC);
-    NTC_ADC_init(&adc_config, &ntc_config, adc_uint_conf);
-    RGB_LED rgb_led_temp;
+    //config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_NTC);
 
+    NTC_ADC_init(&adc_config, &ntc_config, adc_uint_conf);
+
+    RGB_LED rgb_led_temp;
     setup_rgb_temp(&rgb_led_temp);
-    rgb_led_set_duty(&rgb_led_temp, 0, 0, 0);
+    //rgb_led_set_duty(&rgb_led_temp, 0, 0, 0);
 
     int current_r = 0;
     int current_g = 0;
@@ -136,141 +427,7 @@ static void ntc_temp_rgb_task(void *arg) {
     }
 }
 
-void setup_range_RGB_preprocessed(char *arg) {
-    char *color = strtok(arg, "$");
-    char *down = strtok(NULL, "$");
-    char *up = strtok(NULL, "$");
-
-    if (color == NULL || down == NULL || up == NULL) {
-        sendData("Error: Argumentos insuficientes\n");
-        return;
-    }
-    float new_down = atof(down);
-    float new_up = atof(up);
-    setup_range_RGB_handle(color, new_down, new_up);
-}
-
-void temp_on(char *arg) {
-    (void)arg;
-     if (xSemaphoreTake(print_mutex, portMAX_DELAY) == pdTRUE) {
-        temp_print_enabled = true;
-        xTimerStart(print_timer, 0); // Iniciar/Reiniciar timer
-        xSemaphoreGive(print_mutex);
-        sendData("TEMP prints ENABLED (every 2s)\n");
-    }
-}
-
-void temp_off(char *arg) {
-    (void)arg;
-      if (xSemaphoreTake(print_mutex, portMAX_DELAY) == pdTRUE) {
-        temp_print_enabled = false;
-        xTimerStop(print_timer, 0); // Detener timer
-        xSemaphoreGive(print_mutex);
-        sendData("TEMP prints DISABLED\n");
-    }
-}
-
-Command command_table[] = {
-    { "#SET_RANGE", setup_range_RGB_preprocessed},\
-    {"#TEMP_ON", temp_on},\
-    {"#TEMP_OFF",temp_off},\
-    {NULL, NULL} 
-};
-
-void process_command(const char *input) {
-    char input_copy[256]; // Copia de la entrada
-    strncpy(input_copy, input, sizeof(input_copy));
-    input_copy[sizeof(input_copy) - 1] = '\0'; // Aseguramos el fin de la cadena
-
-    char *command;
-    char *arg;
-    command = strtok(input_copy, "$");
-    arg = strtok(NULL, "");
-
-    if (command == NULL) {
-        printf("Error: No se encontró un comando\n");
-        return;
-    }
-
-    for (int i = 0; command_table[i].command != NULL; i++) {
-        if (strcmp(command, command_table[i].command) == 0) {
-            command_table[i].handler(arg);
-            if (arg != NULL) {
-                printf("Command '%s' processed with argument '%s'\n", command, arg);
-            } else {
-                printf("Command '%s' processed with no arguments\n", command);
-            }
-            return;
-        }
-    }
-    printf("Error: Command '%s' not found\n", command);
-}
-
-static void rx_task(void *arg)
-{
-    static const char *RX_TASK_TAG = "RX_TASK";
-    esp_log_level_set(RX_TASK_TAG, ESP_LOG_INFO);
-    uint8_t* data = (uint8_t*) malloc(RX_BUF_SIZE + 1);
-
-    if (data == NULL) {
-        ESP_LOGE(RX_TASK_TAG, "Error al asignar memoria para el buffer UART");
-        vTaskDelete(NULL); // Finaliza la tarea si no hay memoria
-    }
-
-    while (1) {
-        const int rxBytes = uart_read_bytes(UART_PORT, data, RX_BUF_SIZE, 1000 / portTICK_PERIOD_MS);
-        if (rxBytes > 0) {
-            data[rxBytes] = 0;
-            ESP_LOGI(RX_TASK_TAG, "Read %d bytes: '%s'", rxBytes, data);
-            ESP_LOG_BUFFER_HEXDUMP(RX_TASK_TAG, data, rxBytes, ESP_LOG_INFO);
-            sendData("Data received\n");
-            sendData((char*) data);
-            process_command((char*) data);
-        }
-    }
-    free(data);
-}
-
-
-
-void print_temp_callback(TimerHandle_t xTimer) {
-    if (xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
-        float current_T = last_T; // Leer última temperatura
-        xSemaphoreGive(temp_mutex);
-
-        if (temp_print_enabled) {
-            char buffer[50];
-            snprintf(buffer, sizeof(buffer), "Temp: %.2f°C\n", current_T);
-            sendData(buffer);
-        }
-    }
-}
-
-static esp_err_t mi_handler_1(httpd_req_t *req) {
-    httpd_resp_send(req, "Respuesta de mi_handler_1", HTTPD_RESP_USE_STRLEN);
-	httpd_resp_set_hdr(req, "Connection", "close");
-    return ESP_OK;
-}
-
-static esp_err_t get_values(httpd_req_t *req) {
-    ESP_LOGI(TAG, "/dhtSensor.json requested");
-    float current_temp = 0.0;
-    if(xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
-        current_temp = last_T;
-        xSemaphoreGive(temp_mutex);
-    }
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "temp", current_temp);
-    char *json_string = cJSON_Print(root);
-    cJSON_Delete(root);
-    
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json_string, strlen(json_string));
-    free(json_string);
-    httpd_resp_set_hdr(req, "Connection", "close");
-    return ESP_OK;
-}
-
+//----------------------------------------------------
 static esp_err_t rgb_values_handler(httpd_req_t *req) {
     ESP_LOGI(TAG, "/rgb_values.json requested");
 
@@ -330,7 +487,7 @@ static esp_err_t rgb_values_handler(httpd_req_t *req) {
     int green_percent = (green * 100) / 255;
     int blue_percent = (blue * 100) / 255;
 
-    rgb_led_set_color(&rgb_led, red_percent, green_percent, blue_percent);
+    rgb_led_set_color(&rgb_led_temp, red_percent, green_percent, blue_percent);
 
     httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send(req, NULL, 0);
@@ -341,6 +498,45 @@ static esp_err_t rgb_values_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t get_values(httpd_req_t *req) {
+    ESP_LOGI(TAG, "/dhtSensor.json requested");
+    float current_temp = 0.0;
+    if(xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
+        current_temp = last_T;
+        xSemaphoreGive(temp_mutex);
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "temp", current_temp);
+    char *json_string = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_string, strlen(json_string));
+    free(json_string);
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return ESP_OK;
+}
+
+static esp_err_t get_dimmer_value_handler(httpd_req_t *req)
+{
+    // Obtener el valor del dimmer desde el ADC
+    // Crear un objeto JSON con el valor
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "dimmer", dimmer_value);
+
+    // Convertir a string JSON
+    const char *json_response = cJSON_Print(root);
+
+    // Enviar respuesta
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json_response, strlen(json_response));
+
+    // Liberar memoria
+    cJSON_Delete(root);
+    free((void *)json_response);
+
+    return ESP_OK;
+}
 
 http_server_uri_t uris[] = {
 	{
@@ -359,15 +555,54 @@ http_server_uri_t uris[] = {
 			.user_ctx = NULL
 		}
 	},
+
+    {
+        .uri = {
+        .uri       = "/dimmer",
+        .method    = HTTP_GET,
+        .handler   = get_dimmer_value_handler,
+        .user_ctx  = NULL
+    }
+    },
 };
 
 size_t uris_length = sizeof(uris) / sizeof(uris[0]);
 
 void app_main(void)
-{
-    temp_mutex = xSemaphoreCreateMutex();
+{   
+    
+    setup_rgb_temp(&rgb_led_temp);
 
-	esp_err_t ret = nvs_flash_init(); // Initialize NVS
+    adc_uint_conf = adc_init_adc_unit(ADC_UNIT_NTC);
+    config_button();
+    thresholds_mutex = xSemaphoreCreateMutex();
+    temp_mutex = xSemaphoreCreateMutex();
+    print_mutex = xSemaphoreCreateMutex();
+
+    print_timer = xTimerCreate(
+        "PrintTempTimer",
+        pdMS_TO_TICKS(2000), // 2 segundos
+        pdTRUE, // Auto-reload
+        NULL,
+        print_temp_callback
+    );
+    xTimerStart(print_timer, 0);
+
+    if (print_mutex == NULL || print_timer == NULL) {
+        ESP_LOGE("APP_MAIN", "Error al crear recursos");
+        return;
+    }
+
+    xTimerStart(print_timer, 0); // Iniciar timer
+
+    if (thresholds_mutex == NULL) {
+        ESP_LOGE("APP_MAIN", "No se pudo crear el mutex");
+        return;
+    }
+
+    init();
+
+    esp_err_t ret = nvs_flash_init(); // Initialize NVS
 	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
 	{
 		ESP_ERROR_CHECK(nvs_flash_erase());
@@ -376,7 +611,8 @@ void app_main(void)
 	ESP_ERROR_CHECK(ret);
     wifi_manager_start();
 	http_server_start(uris, uris_length);
-    setup_rgb_temp(&rgb_led);
 
-    //xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
+    xTaskCreate(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
+    xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
+    xTaskCreate(dimmer_RGB_task, "dimmer_rbg_task", 4096, NULL, configMAX_PRIORITIES - 4, NULL);
 }

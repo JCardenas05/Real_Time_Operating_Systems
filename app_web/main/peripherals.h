@@ -6,10 +6,10 @@
 #include "NTC_lib/include/ntc_lib.h"
 
 // Configuraciones de ADC
-#define CONFIG_ADC_CHANNEL_NTC      ADC_CHANNEL_0
+#define CONFIG_ADC_CHANNEL_NTC      ADC_CHANNEL_4
 #define CONFIG_ADC_CHANNEL_DIMMER   ADC_CHANNEL_5
 
-#define ADC_UNIT_NTC                ADC_UNIT_2
+#define ADC_UNIT_NTC                ADC_UNIT_1
 #define ADC_UNIT_DIMMER             ADC_UNIT_1
 
 // Configuraciones del botón
@@ -40,7 +40,7 @@ extern "C" {
 /**
  * @brief Variable externa que indica el LED actual.
  */
-extern int current_led;
+extern volatile int current_led;
 
 /**
  * @brief Inicializa la configuración del ADC y parámetros del NTC.
