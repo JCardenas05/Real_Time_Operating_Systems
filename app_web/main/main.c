@@ -48,7 +48,10 @@ static const int RX_BUF_SIZE = 1024;
 #define NTC_T0 298.15
 #define NTC_R1 100
 
-
+typedef struct {
+    int on_time;  // Tiempo encendido en milisegundos
+    int off_time; // Tiempo apagado en milisegundos
+} BlinkTiming;
 
 typedef struct {
     const char *command;
@@ -67,6 +70,9 @@ static Thresholds_Color current_thresholds = {
     .threshold_B = {0, 0}
 };
 SemaphoreHandle_t thresholds_mutex;
+
+static BlinkTiming blink_timing = {500, 500}; // Valores por defecto
+static SemaphoreHandle_t blink_timing_mutex;
 
 static volatile float last_T = 0.0;
 static SemaphoreHandle_t temp_mutex; // Mutex para acceso seguro
@@ -91,6 +97,9 @@ typedef struct RGB_Values
     int green;
     int blue;
 } RGB_Values;
+
+static RGB_Values led_temp_color = {100, 100, 100}; // Valores iniciales
+static SemaphoreHandle_t led_temp_color_mutex;   // Semáforo para proteger shared_colors
 
 int current_led = RED;
 
@@ -148,6 +157,26 @@ void setup_range_RGB(char *arg) {
     }
 }
 
+void blink_time_uart(char *arg) {
+    char *on_time = strtok(arg, "$");
+    char *off_time = strtok(NULL, "$");
+
+    if (on_time == NULL || off_time == NULL) {
+        sendData("Error: Argumentos insuficientes\n");
+        return;
+    }
+    float new_on = atof(on_time);
+    float new_off = atof(off_time);
+
+    if (xSemaphoreTake(blink_timing_mutex, portMAX_DELAY) == pdTRUE) {
+        blink_timing.on_time = new_on;
+        blink_timing.off_time = new_off;
+        xSemaphoreGive(blink_timing_mutex);
+    }
+    sendData("Blink time updated\n");
+    
+}
+
 void temp_on(char *arg) {
     (void)arg;
      if (xSemaphoreTake(print_mutex, portMAX_DELAY) == pdTRUE) {
@@ -186,6 +215,7 @@ Command command_table[] = {
     { "#SET_RANGE", setup_range_RGB },\
     {"#TEMP_ON", temp_on},\
     {"#TEMP_OFF",temp_off},\
+    {"#BLINK_TIME", blink_time_uart},\
     {NULL, NULL} 
 };
 
@@ -293,7 +323,7 @@ static void setup_rgb_temp(RGB_LED *rgb_led_temp) {
     rgb_led_temp->config.timer = LEDC_TIMER_0;
     rgb_led_temp->config.duty_res = LEDC_TIMER_13_BIT;
     rgb_led_temp->config.frequency = 4000;
-    rgb_led_temp->config.invert = 0;
+    rgb_led_temp->config.invert = 1;
 
     rgb_led_init(rgb_led_temp);
     printf("RGB LED Temp configured\n");
@@ -367,32 +397,14 @@ static void ntc_temp_rgb_task(void *arg) {
     NTC_Config ntc_config;
     ADC_Config adc_config;
 
-    //config_adc_unit adc_uint_conf = adc_init_adc_unit(ADC_UNIT_NTC);
-
     NTC_ADC_init(&adc_config, &ntc_config, adc_uint_conf);
-
-    RGB_LED rgb_led_temp;
-    setup_rgb_temp(&rgb_led_temp);
-    //rgb_led_set_duty(&rgb_led_temp, 0, 0, 0);
-
-    int current_r = 0;
-    int current_g = 0;
-    int current_b = 0;
 
     int raw;
     float voltage;
     float R;
     float T;
 
-    Thresholds_Color received_thresholds;
-
     while (1) {
-        
-        if (xSemaphoreTake(thresholds_mutex, portMAX_DELAY) == pdTRUE) {
-            received_thresholds = current_thresholds;
-            xSemaphoreGive(thresholds_mutex);
-        }
-
         raw = read_adc_raw(&adc_config);
         voltage = adc_raw_to_voltage(&adc_config, raw);
 
@@ -400,28 +412,10 @@ static void ntc_temp_rgb_task(void *arg) {
 
         R = R_NTC(&ntc_config, voltage);
         T = T_NTC(&ntc_config, R);
-
         if (xSemaphoreTake(temp_mutex, portMAX_DELAY) == pdTRUE) {
             last_T = T;
             xSemaphoreGive(temp_mutex);
         }
-
-        if (T >= received_thresholds.threshold_R[0] && T <= received_thresholds.threshold_R[1]) {
-            current_r = 100;
-        } else {
-            current_r = 0;
-        }
-        if (T >= received_thresholds.threshold_G[0] && T <= received_thresholds.threshold_G[1]) {
-            current_g = 100;
-        } else {
-            current_g = 0;
-        }
-        if (T >= received_thresholds.threshold_B[0] && T <= received_thresholds.threshold_B[1]) {
-            current_b = 100;
-        } else {
-            current_b = 0;
-        }
-        rgb_led_set_color(&rgb_led_temp, current_r, current_g, current_b);
         printf("R_NTC: %.2f, T_NTC: %.2f\n", R, T);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -487,14 +481,25 @@ static esp_err_t rgb_values_handler(httpd_req_t *req) {
     int green_percent = (green * 100) / 255;
     int blue_percent = (blue * 100) / 255;
 
-    rgb_led_set_color(&rgb_led_temp, red_percent, green_percent, blue_percent);
+    if (xSemaphoreTake(led_temp_color_mutex, portMAX_DELAY) == pdTRUE) {
+        led_temp_color.red = red;
+        led_temp_color.green = green;
+        led_temp_color.blue = blue;
+        xSemaphoreGive(led_temp_color_mutex);
+    } else {
+        ESP_LOGE(TAG, "No se pudo tomar el semáforo en rgb_values_handler");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Internal server error");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
 
-    httpd_resp_set_hdr(req, "Connection", "close");
-    httpd_resp_send(req, NULL, 0);
+    rgb_led_set_color(&rgb_led_temp, led_temp_color.red, led_temp_color.green, led_temp_color.blue);
+
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
 
+    httpd_resp_set_hdr(req, "Connection", "close");
     return ESP_OK;
 }
 
@@ -534,7 +539,96 @@ static esp_err_t get_dimmer_value_handler(httpd_req_t *req)
     // Liberar memoria
     cJSON_Delete(root);
     free((void *)json_response);
+    httpd_resp_set_hdr(req, "Connection", "close");
 
+    return ESP_OK;
+}
+
+void blink_led_task(void *arg) {
+    RGB_LED *rgb_led_temp = (RGB_LED *)arg;
+    BlinkTiming timing;
+    RGB_Values colors;
+
+    while (1) {
+        if (xSemaphoreTake(blink_timing_mutex, portMAX_DELAY) == pdTRUE) {
+            timing = blink_timing;
+            xSemaphoreGive(blink_timing_mutex);
+        }
+
+        if (xSemaphoreTake(led_temp_color_mutex, portMAX_DELAY) == pdTRUE) {
+            colors = led_temp_color;
+            xSemaphoreGive(led_temp_color_mutex);
+        } else {
+            ESP_LOGE(TAG, "No se pudo tomar el semáforo en blink_led_task");
+        }
+
+        rgb_led_set_color(rgb_led_temp, led_temp_color.red, led_temp_color.green, led_temp_color.blue);
+        vTaskDelay(pdMS_TO_TICKS(timing.on_time));
+
+        rgb_led_set_color(rgb_led_temp, 0, 0, 0); // Apagar el LED
+        vTaskDelay(pdMS_TO_TICKS(timing.off_time));
+    }
+}
+
+static esp_err_t blink_led_handler(httpd_req_t *req) {
+    ESP_LOGI(TAG, "/blink_led requested");
+
+    char content[200];
+    int total_len = 0;
+    int cur_len = 0;
+    int content_len = req->content_len;
+    ESP_LOGI(TAG, "Content length: %d", content_len);
+
+    while (total_len < content_len) {
+        cur_len = httpd_req_recv(req, content + total_len, sizeof(content) - 1 - total_len);
+        if (cur_len < 0) {
+            if (cur_len == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to receive request body");
+            return ESP_FAIL;
+        }
+        total_len += cur_len;
+    }
+    content[total_len] = '\0';
+
+    ESP_LOGI(TAG, "Content: %s", content);
+
+    cJSON *root = cJSON_Parse(content);
+    if (root == NULL) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    cJSON *on_time_item = cJSON_GetObjectItem(root, "on_time");
+    cJSON *off_time_item = cJSON_GetObjectItem(root, "off_time");
+
+    if (!on_time_item || !off_time_item || !cJSON_IsNumber(on_time_item) || !cJSON_IsNumber(off_time_item)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid timing values in JSON");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    int on_time = on_time_item->valueint;
+    int off_time = off_time_item->valueint;
+
+    if (on_time < 0 || off_time < 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Timing values must be positive");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+
+    cJSON_Delete(root);
+
+    if (xSemaphoreTake(blink_timing_mutex, portMAX_DELAY) == pdTRUE) {
+        blink_timing.on_time = on_time;
+        blink_timing.off_time = off_time;
+        xSemaphoreGive(blink_timing_mutex);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"success\"}", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_set_hdr(req, "Connection", "close");
     return ESP_OK;
 }
 
@@ -562,7 +656,16 @@ http_server_uri_t uris[] = {
         .method    = HTTP_GET,
         .handler   = get_dimmer_value_handler,
         .user_ctx  = NULL
-    }
+        }
+    },
+
+    {
+        .uri = {
+            .uri = "/blink_led",
+            .method = HTTP_POST,
+            .handler = blink_led_handler,
+            .user_ctx = NULL
+        }
     },
 };
 
@@ -578,6 +681,13 @@ void app_main(void)
     thresholds_mutex = xSemaphoreCreateMutex();
     temp_mutex = xSemaphoreCreateMutex();
     print_mutex = xSemaphoreCreateMutex();
+    blink_timing_mutex = xSemaphoreCreateMutex();
+
+    led_temp_color_mutex = xSemaphoreCreateMutex();
+    if (led_temp_color_mutex == NULL) {
+        ESP_LOGE(TAG, "No se pudo crear el semáforo shared_colors_mutex");
+        return;
+    }
 
     print_timer = xTimerCreate(
         "PrintTempTimer",
@@ -615,4 +725,5 @@ void app_main(void)
     xTaskCreate(rx_task, "uart_rx_task", 1024 * 2, NULL, configMAX_PRIORITIES - 1, NULL);
     xTaskCreate(ntc_temp_rgb_task, "ntc_temp_rgb_task", 4096, NULL, configMAX_PRIORITIES - 3, NULL);
     xTaskCreate(dimmer_RGB_task, "dimmer_rbg_task", 4096, NULL, configMAX_PRIORITIES - 4, NULL);
+    xTaskCreate(blink_led_task, "blink_led_task", 4096, &rgb_led_temp, configMAX_PRIORITIES - 2, NULL);
 }

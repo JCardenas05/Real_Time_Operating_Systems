@@ -92,11 +92,14 @@ function initTemperatura() {
     }
 }
 
+function get_home() {
+    window.location.href = '/';
+}
 
 
 function initLED() {
     if(document.querySelector('.pagina-led')) {
-        let colorActual = { rojo: 255, verde: 0, azul: 0 };
+        let colorActual = { rojo: 200, verde: 0, azul: 0 };
 
         function actualizarValores() {
             const rojo = document.getElementById('rojo').value;
@@ -158,6 +161,8 @@ function initLED() {
         actualizarValores();
     }
 }
+
+
 
 function initCredenciales() {
     const formCredenciales = document.getElementById('form-credenciales');
@@ -309,3 +314,38 @@ function mostrarPassword(inputId) {
         eyeIcon.classList.remove('mostrar');
     }
 }
+
+// Función para establecer el parpadeo del LED
+function setBlink() {
+    // Obtener los valores de los campos de tiempo
+    const timeOn = document.getElementById('time-on').value;
+    const timeOff = document.getElementById('time-off').value;
+
+    // Crear el objeto JSON con los tiempos de parpadeo
+    const blinkData = {
+        on_time: parseInt(timeOn),
+        off_time: parseInt(timeOff)
+    };
+
+    // Enviar la solicitud POST al servidor
+    fetch('/blink_led', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(blinkData)
+    })
+    .then(response => {
+        if (response.ok) {
+            alert('Parpadeo configurado correctamente');
+        } else {
+            alert('Error al configurar el parpadeo');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error de conexión');
+    });
+}
+
+document.getElementById('btn-blink').addEventListener('click', setBlink);
